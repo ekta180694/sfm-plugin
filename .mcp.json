@@ -1,0 +1,1 @@
+{"mcpServers": {"sfm": {"command": "bash", "args": ["-c", "exec \"$HOME/.sfm/venv/bin/python\" -m sfm.mcp_server"]}}}

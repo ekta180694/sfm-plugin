@@ -1,0 +1,3 @@
+{"name": "sfm", "version": "1.0.0",
+ "description": "Build a simulation model with a UI, step by step: SFM as it is (Level 1) or your own project you can change without limits (Level 2), with the same model page.",
+ "author": {"name": "Ekta Srivastava", "email": "ekta.srivastava@assurant.com"}}

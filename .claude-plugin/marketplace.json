@@ -1,0 +1,15 @@
+{
+ "name": "sfm-plugins",
+ "description": "Simulation models with a UI, built step by step with SFM (private, for testing).",
+ "owner": {
+  "name": "Ekta Srivastava",
+  "email": "ekta.srivastava@assurant.com"
+ },
+ "plugins": [
+  {
+   "name": "sfm",
+   "source": "./",
+   "description": "Simulation models with a UI, step by step (SFM)."
+  }
+ ]
+}

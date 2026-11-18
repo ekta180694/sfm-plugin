@@ -1,0 +1,1 @@
+{"servers": {"sfm": {"type": "stdio", "command": "${userHome}/.sfm/venv/bin/python", "args": ["-m", "sfm.mcp_server"]}}}
