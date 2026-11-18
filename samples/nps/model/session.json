@@ -1,0 +1,2136 @@
+{
+ "id": "20261118-ac4dda",
+ "created": "2026-11-18T10:04:33",
+ "title": "NPS sample",
+ "inputs": {
+  "description": "",
+  "docs": [],
+  "data": [
+   "/data/projects/ekta/sfm-plugin/samples/nps/data/seg.csv",
+   "/data/projects/ekta/sfm-plugin/samples/nps/data/obs.csv"
+  ],
+  "kg_link": null,
+  "time_col": null,
+  "shape": "spec"
+ },
+ "stage": "ready",
+ "records": {
+  "data": {
+   "mode": "spec",
+   "procspec": {
+    "fact_table": "obs",
+    "time": {
+     "column": "date",
+     "unit": "month",
+     "origin": null
+    },
+    "groups": {
+     "column": "segment_id",
+     "label_table": "seg",
+     "label_column": "segment_name"
+    },
+    "stocks": [],
+    "flows": [
+     {
+      "name": "responses",
+      "column": "responses",
+      "kind": "arrivals",
+      "of": null,
+      "driver": null,
+      "max_lag": 6,
+      "growth": 1.04,
+      "effect": null,
+      "rate_basis": "learned"
+     },
+     {
+      "name": "promoters",
+      "column": "promoters",
+      "kind": "arrivals",
+      "of": null,
+      "driver": null,
+      "max_lag": 6,
+      "growth": null,
+      "effect": null,
+      "rate_basis": "learned"
+     },
+     {
+      "name": "passives",
+      "column": "passives",
+      "kind": "arrivals",
+      "of": null,
+      "driver": null,
+      "max_lag": 6,
+      "growth": null,
+      "effect": null,
+      "rate_basis": "learned"
+     },
+     {
+      "name": "detractors",
+      "column": "detractors",
+      "kind": "arrivals",
+      "of": null,
+      "driver": null,
+      "max_lag": 6,
+      "growth": null,
+      "effect": null,
+      "rate_basis": "learned"
+     }
+    ],
+    "queues": [],
+    "levers": [
+     {
+      "name": "updates",
+      "column": "updates_pct",
+      "per_group": true,
+      "max_extra": {
+       "table": "seg",
+       "key": "segment_id",
+       "column": "max_driver",
+       "kind": "absolute"
+      },
+      "cost": null,
+      "unit": "percentage points"
+     }
+    ],
+    "presets": [],
+    "inventories": [],
+    "events": [],
+    "policies": [],
+    "compositions": [
+     {
+      "total": "responses",
+      "parts": [
+       "promoters",
+       "passives",
+       "detractors"
+      ],
+      "responses": [
+       {
+        "lever": "updates",
+        "kpi": "nps",
+        "per": 10.0,
+        "effect": 2.4,
+        "shift_from": "detractors",
+        "shift_to": "promoters",
+        "scale": {
+         "table": "seg",
+         "key": "segment_id",
+         "column": "mult",
+         "kind": "absolute"
+        },
+        "source": ""
+       }
+      ]
+     }
+    ],
+    "event_log": null,
+    "realisation": null,
+    "kpis": [
+     {
+      "name": "nps",
+      "numerator": "promoters - detractors",
+      "factor": 100.0,
+      "denominator": "responses",
+      "reduce": null,
+      "better": "higher",
+      "unit": "points"
+     }
+    ],
+    "horizon": null,
+    "note": ""
+   },
+   "checks": [
+    {
+     "item": "columns",
+     "ok": true,
+     "evidence": "all named columns exist",
+     "question": null
+    },
+    {
+     "item": "names",
+     "ok": true,
+     "evidence": "every stock, flow and lever named is declared",
+     "question": null
+    },
+    {
+     "item": "time",
+     "ok": true,
+     "evidence": "date: 2025-01-01 to 2025-12-01",
+     "question": null
+    },
+    {
+     "item": "one row per group and period",
+     "ok": true,
+     "evidence": "36 rows, 0 duplicated on segment_id x date",
+     "question": null
+    },
+    {
+     "item": "composition responses",
+     "ok": true,
+     "evidence": "promoters + passives + detractors = responses on 100% of rows",
+     "question": null
+    },
+    {
+     "item": "response of nps to updates",
+     "ok": true,
+     "evidence": "+10 updates -> +2.4 nps by moving share from detractors to promoters, scaled by seg.mult",
+     "question": null
+    },
+    {
+     "item": "KPI definitions: nps",
+     "ok": true,
+     "evidence": "documents (100 * (sum(promoters) - sum(detractors)) / sum(responses)) give 7.811; the structure gives 7.811",
+     "question": null
+    },
+    {
+     "item": "lever updates: maximum within its range",
+     "ok": false,
+     "evidence": "seg.max_driver allows up to 105, but updates_pct is a percentage (at most 100); it is capped at 100",
+     "question": "seg.max_driver goes above 100 for a percentage; is that value right?"
+    },
+    {
+     "item": "levers",
+     "ok": true,
+     "evidence": "1 lever(s): updates",
+     "question": null
+    },
+    {
+     "item": "lever updates: maximum from seg.max_driver",
+     "ok": true,
+     "evidence": "seg.max_driver by segment_id",
+     "question": null
+    },
+    {
+     "item": "KPI nps",
+     "ok": true,
+     "evidence": "observed 7.812",
+     "question": null
+    }
+   ],
+   "draft_differences": [],
+   "document_gaps": [],
+   "recipe": null,
+   "recipe_votes": null,
+   "questions": [
+    "seg.max_driver goes above 100 for a percentage; is that value right?"
+   ],
+   "tables": {
+    "seg": {
+     "rows": 3,
+     "columns": 4,
+     "references": []
+    },
+    "obs": {
+     "rows": 36,
+     "columns": 8,
+     "references": [
+      "segment_id -> seg.segment_id",
+      "segment_name -> seg.segment_name"
+     ]
+    }
+   }
+  },
+  "process": {
+   "mode": "spec",
+   "groups": [
+    "New",
+    "Established",
+    "High-Touch"
+   ],
+   "start_date": "2026-01-01",
+   "dates": [
+    "2026-01-01",
+    "2026-12-01"
+   ],
+   "stocks": [],
+   "flows": [
+    {
+     "name": "responses",
+     "column": "responses",
+     "kind": "arrivals",
+     "of": null,
+     "driver": null,
+     "max_lag": 6,
+     "growth": 1.04,
+     "effect": null,
+     "rate_basis": "learned"
+    },
+    {
+     "name": "promoters",
+     "column": "promoters",
+     "kind": "arrivals",
+     "of": null,
+     "driver": null,
+     "max_lag": 6,
+     "growth": null,
+     "effect": null,
+     "rate_basis": "learned"
+    },
+    {
+     "name": "passives",
+     "column": "passives",
+     "kind": "arrivals",
+     "of": null,
+     "driver": null,
+     "max_lag": 6,
+     "growth": null,
+     "effect": null,
+     "rate_basis": "learned"
+    },
+    {
+     "name": "detractors",
+     "column": "detractors",
+     "kind": "arrivals",
+     "of": null,
+     "driver": null,
+     "max_lag": 6,
+     "growth": null,
+     "effect": null,
+     "rate_basis": "learned"
+    }
+   ],
+   "queues": [],
+   "levers": {
+    "responses_forecast__New": {
+     "default": 419.20666666666665,
+     "min": 0.0,
+     "max": 1316.6399999999999,
+     "unit": "per month",
+     "kind": "environment",
+     "note": "responses at New: the same month and weekday as observed (a seasonal forecast)",
+     "cost": null
+    },
+    "base__updates__New": {
+     "default": 40.260190462765884,
+     "min": 0.0,
+     "max": 410.0081743493306,
+     "unit": "percentage points",
+     "kind": "environment",
+     "note": "updates_pct at New as planned (same month in history): what effects compare with",
+     "cost": null
+    },
+    "updates__New": {
+     "default": 39.9409,
+     "min": 19.9704,
+     "max": 95.0,
+     "unit": "percentage points",
+     "kind": "control",
+     "note": "updates_pct at New: today 39.94 (last 4 weeks); at most 55.0591 more (seg.max_driver)",
+     "cost": null
+    },
+    "share__promoters__New": {
+     "default": 0.3965170513483341,
+     "min": 0.0,
+     "max": 1.0,
+     "unit": "share",
+     "kind": "environment",
+     "note": "promoters share of responses at New: the same month in history",
+     "cost": null
+    },
+    "share__passives__New": {
+     "default": 0.268614224448241,
+     "min": 0.0,
+     "max": 1.0,
+     "unit": "share",
+     "kind": "environment",
+     "note": "passives share of responses at New: the same month in history",
+     "cost": null
+    },
+    "share__detractors__New": {
+     "default": 0.3348687242034249,
+     "min": 0.0,
+     "max": 1.0,
+     "unit": "share",
+     "kind": "environment",
+     "note": "detractors share of responses at New: the same month in history",
+     "cost": null
+    },
+    "responses_forecast__Established": {
+     "default": 423.1933333333334,
+     "min": 0.0,
+     "max": 1407.1200000000001,
+     "unit": "per month",
+     "kind": "environment",
+     "note": "responses at Established: the same month and weekday as observed (a seasonal forecast)",
+     "cost": null
+    },
+    "base__updates__Established": {
+     "default": 52.914621993125245,
+     "min": 0.0,
+     "max": 540.0823797044058,
+     "unit": "percentage points",
+     "kind": "environment",
+     "note": "updates_pct at Established as planned (same month in history): what effects compare with",
+     "cost": null
+    },
+    "updates__Established": {
+     "default": 52.5956,
+     "min": 26.2978,
+     "max": 95.0,
+     "unit": "percentage points",
+     "kind": "control",
+     "note": "updates_pct at Established: today 52.6 (last 4 weeks); at most 42.4044 more (seg.max_driver)",
+     "cost": null
+    },
+    "share__promoters__Established": {
+     "default": 0.41807825767198653,
+     "min": 0.0,
+     "max": 1.0,
+     "unit": "share",
+     "kind": "environment",
+     "note": "promoters share of responses at Established: the same month in history",
+     "cost": null
+    },
+    "share__passives__Established": {
+     "default": 0.2697908905699818,
+     "min": 0.0,
+     "max": 1.0,
+     "unit": "share",
+     "kind": "environment",
+     "note": "passives share of responses at Established: the same month in history",
+     "cost": null
+    },
+    "share__detractors__Established": {
+     "default": 0.31213085175803174,
+     "min": 0.0,
+     "max": 1.0,
+     "unit": "share",
+     "kind": "environment",
+     "note": "detractors share of responses at Established: the same month in history",
+     "cost": null
+    },
+    "responses_forecast__High_Touch": {
+     "default": 421.28666666666663,
+     "min": 0.0,
+     "max": 1350.96,
+     "unit": "per month",
+     "kind": "environment",
+     "note": "responses at High-Touch: the same month and weekday as observed (a seasonal forecast)",
+     "cost": null
+    },
+    "base__updates__High_Touch": {
+     "default": 65.19206764172114,
+     "min": 0.0,
+     "max": 666.3301836952444,
+     "unit": "percentage points",
+     "kind": "environment",
+     "note": "updates_pct at High-Touch as planned (same month in history): what effects compare with",
+     "cost": null
+    },
+    "updates__High_Touch": {
+     "default": 65.0845,
+     "min": 32.5422,
+     "max": 100.0,
+     "unit": "percentage points",
+     "kind": "control",
+     "note": "updates_pct at High-Touch: today 65.08 (last 4 weeks); at most 39.9155 more (seg.max_driver)",
+     "cost": null
+    },
+    "share__promoters__High_Touch": {
+     "default": 0.39956198230975765,
+     "min": 0.0,
+     "max": 1.0,
+     "unit": "share",
+     "kind": "environment",
+     "note": "promoters share of responses at High-Touch: the same month in history",
+     "cost": null
+    },
+    "share__passives__High_Touch": {
+     "default": 0.26764261211213597,
+     "min": 0.0,
+     "max": 1.0,
+     "unit": "share",
+     "kind": "environment",
+     "note": "passives share of responses at High-Touch: the same month in history",
+     "cost": null
+    },
+    "share__detractors__High_Touch": {
+     "default": 0.33279540557810633,
+     "min": 0.0,
+     "max": 1.0,
+     "unit": "share",
+     "kind": "environment",
+     "note": "detractors share of responses at High-Touch: the same month in history",
+     "cost": null
+    }
+   },
+   "kpis": {
+    "nps": {
+     "observed": 7.811535559975311,
+     "better": "higher"
+    }
+   },
+   "on_time_fit": {},
+   "controllable": [
+    "updates__New",
+    "updates__Established",
+    "updates__High_Touch"
+   ],
+   "assumptions": [
+    "responses: forecast x1.04 (stated growth)",
+    "responses: forecast x1.04 (stated growth)",
+    "responses: forecast x1.04 (stated growth)"
+   ],
+   "mechanisms": {
+    "updates__New": {
+     "kind": "response",
+     "kpi": "nps",
+     "effect": 1.92,
+     "per": 10.0,
+     "from": "detractors",
+     "to": "promoters",
+     "scale": 0.8,
+     "share_per_unit": 0.0009600000000001057,
+     "source": ""
+    },
+    "responses__New": {
+     "kind": "composition",
+     "shares": {
+      "promoters": 0.39632003307835434,
+      "passives": 0.26855488939425265,
+      "detractors": 0.335125077527393
+     }
+    },
+    "updates__Established": {
+     "kind": "response",
+     "kpi": "nps",
+     "effect": 2.4,
+     "per": 10.0,
+     "from": "detractors",
+     "to": "promoters",
+     "scale": 1.0,
+     "share_per_unit": 0.0012000000000001322,
+     "source": ""
+    },
+    "responses__Established": {
+     "kind": "composition",
+     "shares": {
+      "promoters": 0.4179807495392177,
+      "passives": 0.2699160352242474,
+      "detractors": 0.3121032152365349
+     }
+    },
+    "updates__High_Touch": {
+     "kind": "response",
+     "kpi": "nps",
+     "effect": 2.88,
+     "per": 10.0,
+     "from": "detractors",
+     "to": "promoters",
+     "scale": 1.2,
+     "share_per_unit": 0.0014400000000001584,
+     "source": ""
+    },
+    "responses__High_Touch": {
+     "kind": "composition",
+     "shares": {
+      "promoters": 0.3997119934169924,
+      "passives": 0.2676404032092162,
+      "detractors": 0.3326476033737914
+     }
+    }
+   },
+   "how_scenarios_run": {
+    "model": "Stock-and-flow model: one row per period",
+    "levers": [
+     "updates__New",
+     "updates__Established",
+     "updates__High_Touch"
+    ],
+    "steps": [
+     "A scenario sets levers to new values for a window of periods (e.g. periods 1\u20138), or for the whole horizon.",
+     "Each period, the flows (as found) are computed from the stocks, the levers and the learned rates; each stock (as found) moves by exactly its inflows minus its outflows, so a change carries over to later periods.",
+     "KPIs are read from the simulated periods and compared with the baseline run on the same random draws (common random numbers); the difference is the effect."
+    ],
+    "uncertainty": "500 replications: the effect with its 95% interval and P10\u2013P90, and the path per period.",
+    "anchor": "The latest observed period (stocks start where the data ends).",
+    "limits": [
+     "A lever value never observed in the data is graded directional.",
+     "Drivers not in the data cannot be simulated; the Business Context Layer may show what others measured."
+    ]
+   }
+  },
+  "build": {
+   "mode": "spec",
+   "model_type": {
+    "kind": "Process-specification model: composition of responses into promoters / passives / detractors with a stated response to updates",
+    "summary": "per segment_id (New, Established, High-Touch); outside flows follow the observed seasonal pattern with the stated growth; step 0 is 2026-01-01."
+   },
+   "fit": {
+    "pass": true,
+    "series": {
+     "nps": {
+      "window": "2025-08-01 to 2025-12-01",
+      "actual": 7.06,
+      "predicted": 8.28,
+      "p10": 6.42,
+      "p90": 10.25,
+      "coverage": 0.8,
+      "bias": 1.211,
+      "sd": 2.832,
+      "inside": true,
+      "band": {
+       "p10": [
+        4.548,
+        3.8479,
+        5.1448,
+        4.1126,
+        3.8808
+       ],
+       "p50": [
+        8.5034,
+        8.119,
+        8.1568,
+        8.3898,
+        8.2117
+       ],
+       "p90": [
+        11.785,
+        11.8556,
+        12.0333,
+        12.0024,
+        12.0251
+       ],
+       "obs": [
+        5.1613,
+        10.5482,
+        6.5413,
+        9.9665,
+        3.1092
+       ]
+      },
+      "level": false,
+      "pass": true
+     }
+    },
+    "windows": {
+     "nps": [
+      {
+       "window": "2025-08-01 to 2025-12-01",
+       "actual": 7.06,
+       "predicted": 8.28,
+       "p10": 6.42,
+       "p90": 10.25,
+       "coverage": 0.8,
+       "bias": 1.211,
+       "sd": 2.832,
+       "inside": true,
+       "band": {
+        "p10": [
+         4.548,
+         3.8479,
+         5.1448,
+         4.1126,
+         3.8808
+        ],
+        "p50": [
+         8.5034,
+         8.119,
+         8.1568,
+         8.3898,
+         8.2117
+        ],
+        "p90": [
+         11.785,
+         11.8556,
+         12.0333,
+         12.0024,
+         12.0251
+        ],
+        "obs": [
+         5.1613,
+         10.5482,
+         6.5413,
+         9.9665,
+         3.1092
+        ]
+       },
+       "level": false,
+       "pass": true
+      }
+     ]
+    },
+    "note": "replayed 1 windows of 5 periods each, from the state at each cut, with the observed levers and arrivals; pass = each window's total inside its P10-P90 band, the bias under one standard deviation of the KPI's period values, and (rates and flows) at least 60% of periods inside their own P10-P90 band, pooled over the windows",
+    "business": [
+     {
+      "check": "promoters + passives + detractors = responses at New",
+      "ok": true,
+      "detail": "largest gap 0 over the simulated periods"
+     },
+     {
+      "check": "promoters + passives + detractors = responses at Established",
+      "ok": true,
+      "detail": "largest gap 0 over the simulated periods"
+     },
+     {
+      "check": "promoters + passives + detractors = responses at High-Touch",
+      "ok": true,
+      "detail": "largest gap 0 over the simulated periods"
+     },
+     {
+      "check": "nps within [-100, 100]",
+      "ok": true,
+      "detail": "simulated P10-P90 6.84 to 9.07"
+     },
+     {
+      "check": "+10 updates moves nps__New as stated",
+      "ok": true,
+      "detail": "simulated +1.92, stated +1.92 (documents)"
+     },
+     {
+      "check": "+10 updates moves nps__Established as stated",
+      "ok": true,
+      "detail": "simulated +2.39, stated +2.40 (documents)"
+     },
+     {
+      "check": "+10 updates moves nps__High_Touch as stated",
+      "ok": true,
+      "detail": "simulated +2.87, stated +2.88 (documents)"
+     },
+     {
+      "check": "+10 updates__New moves nps__New as stated",
+      "ok": true,
+      "detail": "simulated +1.92, stated +1.92 (documents)"
+     },
+     {
+      "check": "+10 updates__Established moves nps__Established as stated",
+      "ok": true,
+      "detail": "simulated +2.39, stated +2.4 (documents)"
+     },
+     {
+      "check": "+10 updates__High_Touch moves nps__High_Touch as stated",
+      "ok": true,
+      "detail": "simulated +2.87, stated +2.88 (documents)"
+     },
+     {
+      "check": "updates at most 100",
+      "ok": true,
+      "detail": "within range"
+     }
+    ],
+    "constraints": []
+   },
+   "impact": {
+    "nps": [
+     {
+      "lever": "updates__New",
+      "change": "to its maximum 95 (today 39.9409)",
+      "delta": 3.487418402503531,
+      "ci95": [
+       3.480708381371891,
+       3.494128423635171
+      ],
+      "source": "data"
+     },
+     {
+      "lever": "updates__Established",
+      "change": "to its maximum 95 (today 52.5956)",
+      "delta": 3.3770154680614377,
+      "ci95": [
+       3.3703299095221815,
+       3.383701026600694
+      ],
+      "source": "data"
+     },
+     {
+      "lever": "updates__High_Touch",
+      "change": "to its maximum 100 (today 65.0845)",
+      "delta": 3.348412526683806,
+      "ci95": [
+       3.3411954409044475,
+       3.3556296124631646
+      ],
+      "source": "data"
+     }
+    ],
+    "nps__New": [
+     {
+      "lever": "updates__New",
+      "change": "to its maximum 95 (today 39.9409)",
+      "delta": 10.51534008979651,
+      "ci95": [
+       10.505975629022538,
+       10.524704550570481
+      ],
+      "source": "data"
+     },
+     {
+      "lever": "updates__Established",
+      "change": "to its maximum 95 (today 52.5956)",
+      "delta": 0.0,
+      "ci95": [
+       0.0,
+       0.0
+      ],
+      "source": "data"
+     },
+     {
+      "lever": "updates__High_Touch",
+      "change": "to its maximum 100 (today 65.0845)",
+      "delta": 0.0,
+      "ci95": [
+       0.0,
+       0.0
+      ],
+      "source": "data"
+     }
+    ],
+    "nps__Established": [
+     {
+      "lever": "updates__Established",
+      "change": "to its maximum 95 (today 52.5956)",
+      "delta": 10.099363033845924,
+      "ci95": [
+       10.089462092535332,
+       10.109263975156516
+      ],
+      "source": "data"
+     },
+     {
+      "lever": "updates__New",
+      "change": "to its maximum 95 (today 39.9409)",
+      "delta": 0.0,
+      "ci95": [
+       0.0,
+       0.0
+      ],
+      "source": "data"
+     },
+     {
+      "lever": "updates__High_Touch",
+      "change": "to its maximum 100 (today 65.0845)",
+      "delta": 0.0,
+      "ci95": [
+       0.0,
+       0.0
+      ],
+      "source": "data"
+     }
+    ],
+    "nps__High_Touch": [
+     {
+      "lever": "updates__High_Touch",
+      "change": "to its maximum 100 (today 65.0845)",
+      "delta": 10.026103107850071,
+      "ci95": [
+       10.01611908239591,
+       10.036087133304232
+      ],
+      "source": "data"
+     },
+     {
+      "lever": "updates__New",
+      "change": "to its maximum 95 (today 39.9409)",
+      "delta": 0.0,
+      "ci95": [
+       0.0,
+       0.0
+      ],
+      "source": "data"
+     },
+     {
+      "lever": "updates__Established",
+      "change": "to its maximum 95 (today 52.5956)",
+      "delta": 0.0,
+      "ci95": [
+       0.0,
+       0.0
+      ],
+      "source": "data"
+     }
+    ]
+   },
+   "scope": {
+    "levers": {
+     "responses_forecast__New": {
+      "grade": "directional"
+     },
+     "base__updates__New": {
+      "grade": "directional"
+     },
+     "updates__New": {
+      "grade": "quantitative"
+     },
+     "share__promoters__New": {
+      "grade": "directional"
+     },
+     "share__passives__New": {
+      "grade": "directional"
+     },
+     "share__detractors__New": {
+      "grade": "directional"
+     },
+     "responses_forecast__Established": {
+      "grade": "directional"
+     },
+     "base__updates__Established": {
+      "grade": "directional"
+     },
+     "updates__Established": {
+      "grade": "quantitative"
+     },
+     "share__promoters__Established": {
+      "grade": "directional"
+     },
+     "share__passives__Established": {
+      "grade": "directional"
+     },
+     "share__detractors__Established": {
+      "grade": "directional"
+     },
+     "responses_forecast__High_Touch": {
+      "grade": "directional"
+     },
+     "base__updates__High_Touch": {
+      "grade": "directional"
+     },
+     "updates__High_Touch": {
+      "grade": "quantitative"
+     },
+     "share__promoters__High_Touch": {
+      "grade": "directional"
+     },
+     "share__passives__High_Touch": {
+      "grade": "directional"
+     },
+     "share__detractors__High_Touch": {
+      "grade": "directional"
+     }
+    },
+    "refused": {}
+   },
+   "kpis": {
+    "nps": {
+     "source": "assumed",
+     "note": "",
+     "expr": "100 * sum(_num_nps) / sum(_den_nps)",
+     "unit": "points",
+     "better": "higher"
+    },
+    "nps__New": {
+     "source": "assumed",
+     "note": "",
+     "expr": "100 * sum((promoters__New - detractors__New)) / sum((responses__New))",
+     "unit": "points",
+     "better": "higher"
+    },
+    "nps__Established": {
+     "source": "assumed",
+     "note": "",
+     "expr": "100 * sum((promoters__Established - detractors__Established)) / sum((responses__Established))",
+     "unit": "points",
+     "better": "higher"
+    },
+    "nps__High_Touch": {
+     "source": "assumed",
+     "note": "",
+     "expr": "100 * sum((promoters__High_Touch - detractors__High_Touch)) / sum((responses__High_Touch))",
+     "unit": "points",
+     "better": "higher"
+    }
+   },
+   "time_unit": "month",
+   "steps": 12,
+   "start_date": "2026-01-01",
+   "main_kpi": "nps",
+   "reviews": [],
+   "evidence": {
+    "updates__New": {
+     "source": "mechanism",
+     "why": "acts through a structural mechanism of the model (identified by construction)"
+    },
+    "updates__Established": {
+     "source": "mechanism",
+     "why": "acts through a structural mechanism of the model (identified by construction)"
+    },
+    "updates__High_Touch": {
+     "source": "mechanism",
+     "why": "acts through a structural mechanism of the model (identified by construction)"
+    }
+   },
+   "questions": [],
+   "model_kind": {
+    "kind": "mechanistic",
+    "why": "the levers act through stated mechanisms and documented effects, applied to the data's own rates"
+   },
+   "kg_diagram": "flowchart LR\n  n0{{\"nps\"}}\n  n1([\"nps\"])\n  n2>\"responses\"]\n  n3>\"promoters\"]\n  n4>\"passives\"]\n  n5>\"detractors\"]\n  n6[/\"updates\"/]\n  n7{\"+2.4 nps per 10 (shift detractors -> promoters)\"}\n  n0 -.-> n1\n  n2 --> n1\n  n3 --> n1\n  n5 --> n1\n  n6 ==> n7\n  n7 ==> n1",
+   "kg_built": true,
+   "gold": [
+    {
+     "test": "no change to updates__New gives no change",
+     "ok": true,
+     "detail": "+0"
+    },
+    {
+     "test": "twice the change to updates__New gives about twice the effect",
+     "ok": true,
+     "detail": "x1 +0.636, x2 +1.27 (clipping at a limit may bend it)"
+    },
+    {
+     "test": "updates__New moves nps in the stated direction",
+     "ok": true,
+     "detail": "+0.636 for +10"
+    },
+    {
+     "test": "no change to updates__Established gives no change",
+     "ok": true,
+     "detail": "+0"
+    },
+    {
+     "test": "twice the change to updates__Established gives about twice the effect",
+     "ok": true,
+     "detail": "x1 +0.8, x2 +1.6 (clipping at a limit may bend it)"
+    },
+    {
+     "test": "updates__Established moves nps in the stated direction",
+     "ok": true,
+     "detail": "+0.8 for +10"
+    },
+    {
+     "test": "no change to updates__High_Touch gives no change",
+     "ok": true,
+     "detail": "+0"
+    },
+    {
+     "test": "twice the change to updates__High_Touch gives about twice the effect",
+     "ok": true,
+     "detail": "x1 +0.959, x2 +1.92 (clipping at a limit may bend it)"
+    },
+    {
+     "test": "updates__High_Touch moves nps in the stated direction",
+     "ok": true,
+     "detail": "+0.959 for +10"
+    }
+   ],
+   "confidence": {
+    "level": "high",
+    "reasons": [
+     "3/3 lever effects from a mechanism or the documents",
+     "history replay passed",
+     "business checks and gold tests all pass"
+    ]
+   },
+   "how_scenarios_run": {
+    "model": "Stock-and-flow model: one row per month",
+    "levers": [
+     "responses_forecast__New: today 419.2 per month, allowed 0 to 1,317 (outside factor)",
+     "base__updates__New: today 40.26 percentage points, allowed 0 to 410 (outside factor)",
+     "updates__New: today 39.94 percentage points, allowed 19.97 to 95",
+     "share__promoters__New: today 0.3965 share, allowed 0 to 1 (outside factor)",
+     "share__passives__New: today 0.2686 share, allowed 0 to 1 (outside factor)",
+     "share__detractors__New: today 0.3349 share, allowed 0 to 1 (outside factor)",
+     "responses_forecast__Established: today 423.2 per month, allowed 0 to 1,407 (outside factor)",
+     "base__updates__Established: today 52.91 percentage points, allowed 0 to 540.1 (outside factor)",
+     "updates__Established: today 52.6 percentage points, allowed 26.3 to 95",
+     "share__promoters__Established: today 0.4181 share, allowed 0 to 1 (outside factor)",
+     "share__passives__Established: today 0.2698 share, allowed 0 to 1 (outside factor)",
+     "share__detractors__Established: today 0.3121 share, allowed 0 to 1 (outside factor)",
+     "responses_forecast__High_Touch: today 421.3 per month, allowed 0 to 1,351 (outside factor)",
+     "base__updates__High_Touch: today 65.19 percentage points, allowed 0 to 666.3 (outside factor)",
+     "updates__High_Touch: today 65.08 percentage points, allowed 32.54 to 100",
+     "share__promoters__High_Touch: today 0.3996 share, allowed 0 to 1 (outside factor)",
+     "share__passives__High_Touch: today 0.2676 share, allowed 0 to 1 (outside factor)",
+     "share__detractors__High_Touch: today 0.3328 share, allowed 0 to 1 (outside factor)"
+    ],
+    "steps": [
+     "A scenario sets levers to new values for a window of months (e.g. months 1\u20138), or for the whole horizon.",
+     "Each month, the flows (responses__New, promoters__New, passives__New, detractors__New, responses__Established, promoters__Established, passives__Established, detractors__Established) are computed from the stocks, the levers and the learned rates; each stock (as found) moves by exactly its inflows minus its outflows, so a change carries over to later months.",
+     "KPIs are read from the simulated months and compared with the baseline run on the same random draws (common random numbers); the difference is the effect."
+    ],
+    "uncertainty": "500 replications: the effect with its 95% interval and P10\u2013P90, and the path per month.",
+    "anchor": "The latest observed month (stocks start where the data ends); horizon 12 months.",
+    "limits": [
+     "A lever value never observed in the data is graded directional.",
+     "Drivers not in the data cannot be simulated; the Business Context Layer may show what others measured."
+    ]
+   }
+  }
+ },
+ "rev": {
+  "data": 1,
+  "process": 1,
+  "build": 1
+ },
+ "approved": {},
+ "profile": {
+  "objective": "nps",
+  "process_steps": [],
+  "kpis": {
+   "nps": {
+    "expr": "100 * (sum(promoters) - sum(detractors)) / sum(responses)"
+   }
+  },
+  "drivers": []
+ },
+ "kg": {
+  "nodes": [
+   {
+    "id": "usecase",
+    "label": "UseCase",
+    "name": "nps"
+   },
+   {
+    "id": "kpi:nps",
+    "label": "Kpi",
+    "name": "nps",
+    "formula": "100 x sum(promoters - detractors) / sum(responses)",
+    "source": "documents (step 1) and checked on the data"
+   },
+   {
+    "id": "flow:responses",
+    "label": "Flow",
+    "name": "responses",
+    "column": "responses",
+    "kind": "arrivals",
+    "source": "data column responses"
+   },
+   {
+    "id": "flow:promoters",
+    "label": "Flow",
+    "name": "promoters",
+    "column": "promoters",
+    "kind": "arrivals",
+    "source": "data column promoters"
+   },
+   {
+    "id": "flow:passives",
+    "label": "Flow",
+    "name": "passives",
+    "column": "passives",
+    "kind": "arrivals",
+    "source": "data column passives"
+   },
+   {
+    "id": "flow:detractors",
+    "label": "Flow",
+    "name": "detractors",
+    "column": "detractors",
+    "kind": "arrivals",
+    "source": "data column detractors"
+   },
+   {
+    "id": "lever:updates",
+    "label": "Lever",
+    "name": "updates",
+    "unit": "percentage points",
+    "cap": "seg.max_driver (absolute)",
+    "source": "data column updates_pct",
+    "evidence": {
+     "updates__New": "mechanism",
+     "updates__Established": "mechanism",
+     "updates__High_Touch": "mechanism"
+    }
+   },
+   {
+    "id": "effect:responses:updates",
+    "label": "Effect",
+    "name": "+2.4 nps per 10 (shift detractors -> promoters)",
+    "source": "documents"
+   },
+   {
+    "id": "group:New",
+    "label": "Segment",
+    "name": "New",
+    "source": "data"
+   },
+   {
+    "id": "group:Established",
+    "label": "Segment",
+    "name": "Established",
+    "source": "data"
+   },
+   {
+    "id": "group:High-Touch",
+    "label": "Segment",
+    "name": "High-Touch",
+    "source": "data"
+   }
+  ],
+  "edges": [
+   {
+    "from": "usecase",
+    "to": "kpi:nps",
+    "type": "MEASURED_BY"
+   },
+   {
+    "from": "flow:responses",
+    "to": "kpi:nps",
+    "type": "COMPUTES"
+   },
+   {
+    "from": "flow:promoters",
+    "to": "kpi:nps",
+    "type": "COMPUTES"
+   },
+   {
+    "from": "flow:detractors",
+    "to": "kpi:nps",
+    "type": "COMPUTES"
+   },
+   {
+    "from": "lever:updates",
+    "to": "effect:responses:updates",
+    "type": "DRIVES"
+   },
+   {
+    "from": "effect:responses:updates",
+    "to": "kpi:nps",
+    "type": "CHANGES"
+   }
+  ],
+  "built": true
+ },
+ "exclude_columns": [],
+ "controllable": [
+  "updates__New",
+  "updates__Established",
+  "updates__High_Touch"
+ ],
+ "overrides": {},
+ "horizon": null,
+ "spec": {
+  "name": "model",
+  "version": 1,
+  "status": "published",
+  "mode": "aggregate",
+  "steps": 12,
+  "time_unit": "month",
+  "params": {},
+  "levers": {
+   "responses_forecast__New": {
+    "source": "data",
+    "note": "responses at New: the same month and weekday as observed (a seasonal forecast)",
+    "default": 419.20666666666665,
+    "min": 0.0,
+    "max": 1316.6399999999999,
+    "unit": "per month",
+    "kind": "environment",
+    "baseline": [
+     424.32,
+     394.16,
+     426.40000000000003,
+     429.52000000000004,
+     421.2,
+     438.88,
+     412.88,
+     421.2,
+     412.88,
+     430.56,
+     401.44,
+     417.04
+    ]
+   },
+   "base__updates__New": {
+    "source": "data",
+    "note": "updates_pct at New as planned (same month in history): what effects compare with",
+    "default": 40.260190462765884,
+    "min": 0.0,
+    "max": 410.0081743493306,
+    "unit": "percentage points",
+    "kind": "environment",
+    "baseline": [
+     39.688362768731324,
+     40.683231735274845,
+     39.92038749504276,
+     40.756961887369535,
+     40.90081743493306,
+     40.197561030091,
+     40.86968393856507,
+     40.34184309538827,
+     39.81121824738359,
+     40.494856516642905,
+     38.874929413212705,
+     40.58243199055551
+    ]
+   },
+   "updates__New": {
+    "source": "data",
+    "note": "updates_pct at New: today 39.94 (last 4 weeks); at most 55.0591 more (seg.max_driver)",
+    "default": 39.9409,
+    "min": 19.9704,
+    "max": 95.0,
+    "unit": "percentage points",
+    "kind": "control",
+    "baseline": [
+     39.688362768731324,
+     40.683231735274845,
+     39.92038749504276,
+     40.756961887369535,
+     40.90081743493306,
+     40.197561030091,
+     40.86968393856507,
+     40.34184309538827,
+     39.81121824738359,
+     40.494856516642905,
+     38.874929413212705,
+     40.58243199055551
+    ]
+   },
+   "share__promoters__New": {
+    "source": "data",
+    "note": "promoters share of responses at New: the same month in history",
+    "default": 0.3965170513483341,
+    "min": 0.0,
+    "max": 1.0,
+    "unit": "share",
+    "kind": "environment",
+    "baseline": [
+     0.4019607843137255,
+     0.43007915567282323,
+     0.35365853658536583,
+     0.39951573849878935,
+     0.38765432098765434,
+     0.3767772511848341,
+     0.4156171284634761,
+     0.3728395061728395,
+     0.4181360201511335,
+     0.4492753623188406,
+     0.38860103626943004,
+     0.3640897755610973
+    ]
+   },
+   "share__passives__New": {
+    "source": "data",
+    "note": "passives share of responses at New: the same month in history",
+    "default": 0.268614224448241,
+    "min": 0.0,
+    "max": 1.0,
+    "unit": "share",
+    "kind": "environment",
+    "baseline": [
+     0.2696078431372549,
+     0.28232189973614774,
+     0.2780487804878049,
+     0.2736077481840194,
+     0.2691358024691358,
+     0.27014218009478674,
+     0.28211586901763225,
+     0.26666666666666666,
+     0.26700251889168763,
+     0.23671497584541062,
+     0.24870466321243523,
+     0.2793017456359102
+    ]
+   },
+   "share__detractors__New": {
+    "source": "data",
+    "note": "detractors share of responses at New: the same month in history",
+    "default": 0.3348687242034249,
+    "min": 0.0,
+    "max": 1.0,
+    "unit": "share",
+    "kind": "environment",
+    "baseline": [
+     0.3284313725490196,
+     0.287598944591029,
+     0.36829268292682926,
+     0.3268765133171913,
+     0.3432098765432099,
+     0.35308056872037913,
+     0.3022670025188917,
+     0.36049382716049383,
+     0.3148614609571788,
+     0.3140096618357488,
+     0.3626943005181347,
+     0.3566084788029925
+    ]
+   },
+   "responses_forecast__Established": {
+    "source": "data",
+    "note": "responses at Established: the same month and weekday as observed (a seasonal forecast)",
+    "default": 423.1933333333334,
+    "min": 0.0,
+    "max": 1407.1200000000001,
+    "unit": "per month",
+    "kind": "environment",
+    "baseline": [
+     400.40000000000003,
+     419.12,
+     469.04,
+     449.28000000000003,
+     379.6,
+     411.84000000000003,
+     444.08000000000004,
+     436.8,
+     419.12,
+     420.16,
+     420.16,
+     408.72
+    ]
+   },
+   "base__updates__Established": {
+    "source": "data",
+    "note": "updates_pct at Established as planned (same month in history): what effects compare with",
+    "default": 52.914621993125245,
+    "min": 0.0,
+    "max": 540.0823797044058,
+    "unit": "percentage points",
+    "kind": "environment",
+    "baseline": [
+     53.12922639545649,
+     52.99304266573795,
+     53.211885676426675,
+     52.598134075739665,
+     52.946963873276125,
+     53.908237970440574,
+     53.02383636560584,
+     52.781565837201356,
+     52.34612340154943,
+     52.66823240084798,
+     52.76181162629942,
+     52.60640362892142
+    ]
+   },
+   "updates__Established": {
+    "source": "data",
+    "note": "updates_pct at Established: today 52.6 (last 4 weeks); at most 42.4044 more (seg.max_driver)",
+    "default": 52.5956,
+    "min": 26.2978,
+    "max": 95.0,
+    "unit": "percentage points",
+    "kind": "control",
+    "baseline": [
+     53.12922639545649,
+     52.99304266573795,
+     53.211885676426675,
+     52.598134075739665,
+     52.946963873276125,
+     53.908237970440574,
+     53.02383636560584,
+     52.781565837201356,
+     52.34612340154943,
+     52.66823240084798,
+     52.76181162629942,
+     52.60640362892142
+    ]
+   },
+   "share__promoters__Established": {
+    "source": "data",
+    "note": "promoters share of responses at Established: the same month in history",
+    "default": 0.41807825767198653,
+    "min": 0.0,
+    "max": 1.0,
+    "unit": "share",
+    "kind": "environment",
+    "baseline": [
+     0.43896103896103894,
+     0.4292803970223325,
+     0.4124168514412417,
+     0.4166666666666667,
+     0.38904109589041097,
+     0.4494949494949495,
+     0.3793911007025761,
+     0.4119047619047619,
+     0.38957816377171217,
+     0.4306930693069307,
+     0.4801980198019802,
+     0.3893129770992366
+    ]
+   },
+   "share__passives__Established": {
+    "source": "data",
+    "note": "passives share of responses at Established: the same month in history",
+    "default": 0.2697908905699818,
+    "min": 0.0,
+    "max": 1.0,
+    "unit": "share",
+    "kind": "environment",
+    "baseline": [
+     0.24935064935064935,
+     0.2531017369727047,
+     0.2860310421286031,
+     0.2800925925925926,
+     0.3041095890410959,
+     0.25757575757575757,
+     0.2927400468384075,
+     0.2619047619047619,
+     0.3052109181141439,
+     0.24257425742574257,
+     0.2376237623762376,
+     0.26717557251908397
+    ]
+   },
+   "share__detractors__Established": {
+    "source": "data",
+    "note": "detractors share of responses at Established: the same month in history",
+    "default": 0.31213085175803174,
+    "min": 0.0,
+    "max": 1.0,
+    "unit": "share",
+    "kind": "environment",
+    "baseline": [
+     0.3116883116883117,
+     0.3176178660049628,
+     0.30155210643015523,
+     0.30324074074074076,
+     0.30684931506849317,
+     0.29292929292929293,
+     0.32786885245901637,
+     0.3261904761904762,
+     0.3052109181141439,
+     0.32673267326732675,
+     0.28217821782178215,
+     0.3435114503816794
+    ]
+   },
+   "responses_forecast__High_Touch": {
+    "source": "data",
+    "note": "responses at High-Touch: the same month and weekday as observed (a seasonal forecast)",
+    "default": 421.28666666666663,
+    "min": 0.0,
+    "max": 1350.96,
+    "unit": "per month",
+    "kind": "environment",
+    "baseline": [
+     450.32,
+     424.32,
+     416.0,
+     414.96000000000004,
+     414.96000000000004,
+     398.32,
+     431.6,
+     431.6,
+     420.16,
+     421.2,
+     420.16,
+     411.84000000000003
+    ]
+   },
+   "base__updates__High_Touch": {
+    "source": "data",
+    "note": "updates_pct at High-Touch as planned (same month in history): what effects compare with",
+    "default": 65.19206764172114,
+    "min": 0.0,
+    "max": 666.3301836952444,
+    "unit": "percentage points",
+    "kind": "environment",
+    "baseline": [
+     66.53301836952444,
+     65.50119913642197,
+     65.79535039356303,
+     64.83776407185728,
+     65.08162200286134,
+     64.99706198665154,
+     64.33130137923585,
+     64.88966939609196,
+     65.36615085735565,
+     64.36951985996723,
+     64.98727734165372,
+     65.61487690546963
+    ]
+   },
+   "updates__High_Touch": {
+    "source": "data",
+    "note": "updates_pct at High-Touch: today 65.08 (last 4 weeks); at most 39.9155 more (seg.max_driver)",
+    "default": 65.0845,
+    "min": 32.5422,
+    "max": 100.0,
+    "unit": "percentage points",
+    "kind": "control",
+    "baseline": [
+     66.53301836952444,
+     65.50119913642197,
+     65.79535039356303,
+     64.83776407185728,
+     65.08162200286134,
+     64.99706198665154,
+     64.33130137923585,
+     64.88966939609196,
+     65.36615085735565,
+     64.36951985996723,
+     64.98727734165372,
+     65.61487690546963
+    ]
+   },
+   "share__promoters__High_Touch": {
+    "source": "data",
+    "note": "promoters share of responses at High-Touch: the same month in history",
+    "default": 0.39956198230975765,
+    "min": 0.0,
+    "max": 1.0,
+    "unit": "share",
+    "kind": "environment",
+    "baseline": [
+     0.44341801385681295,
+     0.38235294117647056,
+     0.38,
+     0.41604010025062654,
+     0.43609022556390975,
+     0.4073107049608355,
+     0.3783132530120482,
+     0.39518072289156625,
+     0.4282178217821782,
+     0.3506172839506173,
+     0.4034653465346535,
+     0.37373737373737376
+    ]
+   },
+   "share__passives__High_Touch": {
+    "source": "data",
+    "note": "passives share of responses at High-Touch: the same month in history",
+    "default": 0.26764261211213597,
+    "min": 0.0,
+    "max": 1.0,
+    "unit": "share",
+    "kind": "environment",
+    "baseline": [
+     0.2517321016166282,
+     0.27205882352941174,
+     0.2625,
+     0.24812030075187969,
+     0.2681704260651629,
+     0.2584856396866841,
+     0.30120481927710846,
+     0.26506024096385544,
+     0.2722772277227723,
+     0.254320987654321,
+     0.26485148514851486,
+     0.29292929292929293
+    ]
+   },
+   "share__detractors__High_Touch": {
+    "source": "data",
+    "note": "detractors share of responses at High-Touch: the same month in history",
+    "default": 0.33279540557810633,
+    "min": 0.0,
+    "max": 1.0,
+    "unit": "share",
+    "kind": "environment",
+    "baseline": [
+     0.30484988452655887,
+     0.34558823529411764,
+     0.3575,
+     0.3358395989974937,
+     0.2957393483709273,
+     0.3342036553524804,
+     0.3204819277108434,
+     0.3397590361445783,
+     0.2995049504950495,
+     0.3950617283950617,
+     0.3316831683168317,
+     0.3333333333333333
+    ]
+   }
+  },
+  "stocks": {},
+  "exogenous": {
+   "responses_x__New": {
+    "source": "assumed",
+    "note": "",
+    "dist": "poisson",
+    "mean": "responses_forecast__New",
+    "sd": "0"
+   },
+   "responses_x__Established": {
+    "source": "assumed",
+    "note": "",
+    "dist": "poisson",
+    "mean": "responses_forecast__Established",
+    "sd": "0"
+   },
+   "responses_x__High_Touch": {
+    "source": "assumed",
+    "note": "",
+    "dist": "poisson",
+    "mean": "responses_forecast__High_Touch",
+    "sd": "0"
+   }
+  },
+  "flows": [
+   {
+    "source": "assumed",
+    "note": "",
+    "name": "responses__New",
+    "rate": "responses_x__New",
+    "from": null,
+    "to": null,
+    "noise": "none",
+    "sd": "0",
+    "ar": 0.0,
+    "of": null,
+    "delay": [],
+    "pending": [],
+    "same_step": false
+   },
+   {
+    "source": "assumed",
+    "note": "",
+    "name": "promoters__New",
+    "rate": "minimum(maximum(share__promoters__New + minimum(maximum(0.00096000 * (updates__New - 39.940900), -0.396320), 0.335125), 0), 1)",
+    "from": null,
+    "to": null,
+    "noise": "binomial",
+    "sd": "0",
+    "ar": 0.0,
+    "of": "responses__New",
+    "delay": [],
+    "pending": [],
+    "same_step": false
+   },
+   {
+    "source": "assumed",
+    "note": "",
+    "name": "passives__New",
+    "rate": "minimum(maximum(share__passives__New, 0), 1)",
+    "from": null,
+    "to": null,
+    "noise": "binomial",
+    "sd": "0",
+    "ar": 0.0,
+    "of": "responses__New",
+    "delay": [],
+    "pending": [],
+    "same_step": false
+   },
+   {
+    "source": "assumed",
+    "note": "",
+    "name": "detractors__New",
+    "rate": "maximum(responses__New - promoters__New - passives__New, 0)",
+    "from": null,
+    "to": null,
+    "noise": "none",
+    "sd": "0",
+    "ar": 0.0,
+    "of": null,
+    "delay": [],
+    "pending": [],
+    "same_step": false
+   },
+   {
+    "source": "assumed",
+    "note": "",
+    "name": "responses__Established",
+    "rate": "responses_x__Established",
+    "from": null,
+    "to": null,
+    "noise": "none",
+    "sd": "0",
+    "ar": 0.0,
+    "of": null,
+    "delay": [],
+    "pending": [],
+    "same_step": false
+   },
+   {
+    "source": "assumed",
+    "note": "",
+    "name": "promoters__Established",
+    "rate": "minimum(maximum(share__promoters__Established + minimum(maximum(0.00120000 * (updates__Established - 52.595600), -0.417981), 0.312103), 0), 1)",
+    "from": null,
+    "to": null,
+    "noise": "binomial",
+    "sd": "0",
+    "ar": 0.0,
+    "of": "responses__Established",
+    "delay": [],
+    "pending": [],
+    "same_step": false
+   },
+   {
+    "source": "assumed",
+    "note": "",
+    "name": "passives__Established",
+    "rate": "minimum(maximum(share__passives__Established, 0), 1)",
+    "from": null,
+    "to": null,
+    "noise": "binomial",
+    "sd": "0",
+    "ar": 0.0,
+    "of": "responses__Established",
+    "delay": [],
+    "pending": [],
+    "same_step": false
+   },
+   {
+    "source": "assumed",
+    "note": "",
+    "name": "detractors__Established",
+    "rate": "maximum(responses__Established - promoters__Established - passives__Established, 0)",
+    "from": null,
+    "to": null,
+    "noise": "none",
+    "sd": "0",
+    "ar": 0.0,
+    "of": null,
+    "delay": [],
+    "pending": [],
+    "same_step": false
+   },
+   {
+    "source": "assumed",
+    "note": "",
+    "name": "responses__High_Touch",
+    "rate": "responses_x__High_Touch",
+    "from": null,
+    "to": null,
+    "noise": "none",
+    "sd": "0",
+    "ar": 0.0,
+    "of": null,
+    "delay": [],
+    "pending": [],
+    "same_step": false
+   },
+   {
+    "source": "assumed",
+    "note": "",
+    "name": "promoters__High_Touch",
+    "rate": "minimum(maximum(share__promoters__High_Touch + minimum(maximum(0.00144000 * (updates__High_Touch - 65.084500), -0.399712), 0.332648), 0), 1)",
+    "from": null,
+    "to": null,
+    "noise": "binomial",
+    "sd": "0",
+    "ar": 0.0,
+    "of": "responses__High_Touch",
+    "delay": [],
+    "pending": [],
+    "same_step": false
+   },
+   {
+    "source": "assumed",
+    "note": "",
+    "name": "passives__High_Touch",
+    "rate": "minimum(maximum(share__passives__High_Touch, 0), 1)",
+    "from": null,
+    "to": null,
+    "noise": "binomial",
+    "sd": "0",
+    "ar": 0.0,
+    "of": "responses__High_Touch",
+    "delay": [],
+    "pending": [],
+    "same_step": false
+   },
+   {
+    "source": "assumed",
+    "note": "",
+    "name": "detractors__High_Touch",
+    "rate": "maximum(responses__High_Touch - promoters__High_Touch - passives__High_Touch, 0)",
+    "from": null,
+    "to": null,
+    "noise": "none",
+    "sd": "0",
+    "ar": 0.0,
+    "of": null,
+    "delay": [],
+    "pending": [],
+    "same_step": false
+   }
+  ],
+  "kpis": {
+   "nps": {
+    "source": "assumed",
+    "note": "",
+    "expr": "100 * sum(_num_nps) / sum(_den_nps)",
+    "unit": "points",
+    "better": "higher"
+   },
+   "nps__New": {
+    "source": "assumed",
+    "note": "",
+    "expr": "100 * sum((promoters__New - detractors__New)) / sum((responses__New))",
+    "unit": "points",
+    "better": "higher"
+   },
+   "nps__Established": {
+    "source": "assumed",
+    "note": "",
+    "expr": "100 * sum((promoters__Established - detractors__Established)) / sum((responses__Established))",
+    "unit": "points",
+    "better": "higher"
+   },
+   "nps__High_Touch": {
+    "source": "assumed",
+    "note": "",
+    "expr": "100 * sum((promoters__High_Touch - detractors__High_Touch)) / sum((responses__High_Touch))",
+    "unit": "points",
+    "better": "higher"
+   }
+  },
+  "derived": {
+   "_num_nps": "(promoters__New - detractors__New) + (promoters__Established - detractors__Established) + (promoters__High_Touch - detractors__High_Touch)",
+   "_den_nps": "(responses__New) + (responses__Established) + (responses__High_Touch)"
+  },
+  "reviews": []
+ },
+ "procspec": {
+  "fact_table": "obs",
+  "time": {
+   "column": "date",
+   "unit": "month"
+  },
+  "groups": {
+   "column": "segment_id",
+   "label_table": "seg",
+   "label_column": "segment_name"
+  },
+  "flows": [
+   {
+    "name": "responses",
+    "column": "responses",
+    "growth": 1.04
+   },
+   {
+    "name": "promoters",
+    "column": "promoters"
+   },
+   {
+    "name": "passives",
+    "column": "passives"
+   },
+   {
+    "name": "detractors",
+    "column": "detractors"
+   }
+  ],
+  "levers": [
+   {
+    "name": "updates",
+    "column": "updates_pct",
+    "unit": "percentage points",
+    "max_extra": {
+     "table": "seg",
+     "key": "segment_id",
+     "column": "max_driver",
+     "kind": "absolute"
+    }
+   }
+  ],
+  "compositions": [
+   {
+    "total": "responses",
+    "parts": [
+     "promoters",
+     "passives",
+     "detractors"
+    ],
+    "responses": [
+     {
+      "lever": "updates",
+      "kpi": "nps",
+      "per": 10,
+      "effect": 2.4,
+      "shift_from": "detractors",
+      "shift_to": "promoters",
+      "scale": {
+       "table": "seg",
+       "key": "segment_id",
+       "column": "mult",
+       "kind": "absolute"
+      }
+     }
+    ]
+   }
+  ],
+  "kpis": [
+   {
+    "name": "nps",
+    "numerator": "promoters - detractors",
+    "denominator": "responses",
+    "unit": "points"
+   }
+  ]
+ },
+ "large": null,
+ "spec_meta": {
+  "start_date": "2026-01-01",
+  "unit": "month",
+  "groups": {
+   "S1": "New",
+   "S2": "Established",
+   "S3": "High-Touch"
+  },
+  "levers": {
+   "updates__New": {
+    "cost": null,
+    "group": "New",
+    "column": "updates_pct"
+   },
+   "updates__Established": {
+    "cost": null,
+    "group": "Established",
+    "column": "updates_pct"
+   },
+   "updates__High_Touch": {
+    "cost": null,
+    "group": "High-Touch",
+    "column": "updates_pct"
+   }
+  },
+  "assumptions": [
+   "responses: forecast x1.04 (stated growth)",
+   "responses: forecast x1.04 (stated growth)",
+   "responses: forecast x1.04 (stated growth)"
+  ],
+  "mechanism_levers": [
+   "updates__New",
+   "updates__Established",
+   "updates__High_Touch"
+  ],
+  "stated_effects": {
+   "updates__New": {
+    "lever": "updates",
+    "form": "add",
+    "size": 2.4,
+    "per": 10.0,
+    "exponent": 1.0,
+    "unit": "kpi",
+    "scale": 0.8,
+    "count": false,
+    "source": "",
+    "target": "share detractors -> promoters"
+   },
+   "updates__Established": {
+    "lever": "updates",
+    "form": "add",
+    "size": 2.4,
+    "per": 10.0,
+    "exponent": 1.0,
+    "unit": "kpi",
+    "scale": 1.0,
+    "count": false,
+    "source": "",
+    "target": "share detractors -> promoters"
+   },
+   "updates__High_Touch": {
+    "lever": "updates",
+    "form": "add",
+    "size": 2.4,
+    "per": 10.0,
+    "exponent": 1.0,
+    "unit": "kpi",
+    "scale": 1.2,
+    "count": false,
+    "source": "",
+    "target": "share detractors -> promoters"
+   }
+  },
+  "mechanisms": {
+   "updates__New": {
+    "kind": "response",
+    "kpi": "nps",
+    "effect": 1.92,
+    "per": 10.0,
+    "from": "detractors",
+    "to": "promoters",
+    "scale": 0.8,
+    "share_per_unit": 0.0009600000000001057,
+    "source": ""
+   },
+   "responses__New": {
+    "kind": "composition",
+    "shares": {
+     "promoters": 0.39632003307835434,
+     "passives": 0.26855488939425265,
+     "detractors": 0.335125077527393
+    }
+   },
+   "updates__Established": {
+    "kind": "response",
+    "kpi": "nps",
+    "effect": 2.4,
+    "per": 10.0,
+    "from": "detractors",
+    "to": "promoters",
+    "scale": 1.0,
+    "share_per_unit": 0.0012000000000001322,
+    "source": ""
+   },
+   "responses__Established": {
+    "kind": "composition",
+    "shares": {
+     "promoters": 0.4179807495392177,
+     "passives": 0.2699160352242474,
+     "detractors": 0.3121032152365349
+    }
+   },
+   "updates__High_Touch": {
+    "kind": "response",
+    "kpi": "nps",
+    "effect": 2.88,
+    "per": 10.0,
+    "from": "detractors",
+    "to": "promoters",
+    "scale": 1.2,
+    "share_per_unit": 0.0014400000000001584,
+    "source": ""
+   },
+   "responses__High_Touch": {
+    "kind": "composition",
+    "shares": {
+     "promoters": 0.3997119934169924,
+     "passives": 0.2676404032092162,
+     "detractors": 0.3326476033737914
+    }
+   }
+  },
+  "dates": [
+   "2026-01-01",
+   "2026-12-01"
+  ],
+  "on_time_fit": {}
+ },
+ "support": {
+  "updates__New": [
+   38.96440708231975,
+   40.89739275033258
+  ],
+  "responses_forecast__New": [
+   379.77,
+   421.12
+  ],
+  "promoters_forecast__New": [
+   145.11,
+   183.8
+  ],
+  "passives_forecast__New": [
+   96.22,
+   114.0
+  ],
+  "detractors_forecast__New": [
+   110.21,
+   150.78
+  ],
+  "updates__Established": [
+   52.37384457571035,
+   53.83163921809904
+  ],
+  "responses_forecast__Established": [
+   367.2,
+   448.91
+  ],
+  "promoters_forecast__Established": [
+   143.21,
+   193.12
+  ],
+  "passives_forecast__Established": [
+   96.0,
+   128.56
+  ],
+  "detractors_forecast__Established": [
+   112.22,
+   139.67000000000002
+  ],
+  "updates__High_Touch": [
+   64.3355054121163,
+   66.45187489216869
+  ],
+  "responses_forecast__High_Touch": [
+   384.43,
+   431.02
+  ],
+  "promoters_forecast__High_Touch": [
+   142.66,
+   190.02
+  ],
+  "passives_forecast__High_Touch": [
+   99.0,
+   124.01
+  ],
+  "detractors_forecast__High_Touch": [
+   118.33,
+   158.13
+  ]
+ }
+}

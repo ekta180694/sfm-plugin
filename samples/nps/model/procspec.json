@@ -1,0 +1,78 @@
+{
+ "fact_table": "obs",
+ "time": {
+  "column": "date",
+  "unit": "month"
+ },
+ "groups": {
+  "column": "segment_id",
+  "label_table": "seg",
+  "label_column": "segment_name"
+ },
+ "flows": [
+  {
+   "name": "responses",
+   "column": "responses",
+   "growth": 1.04
+  },
+  {
+   "name": "promoters",
+   "column": "promoters"
+  },
+  {
+   "name": "passives",
+   "column": "passives"
+  },
+  {
+   "name": "detractors",
+   "column": "detractors"
+  }
+ ],
+ "levers": [
+  {
+   "name": "updates",
+   "column": "updates_pct",
+   "unit": "percentage points",
+   "max_extra": {
+    "table": "seg",
+    "key": "segment_id",
+    "column": "max_driver",
+    "kind": "absolute"
+   }
+  }
+ ],
+ "compositions": [
+  {
+   "total": "responses",
+   "parts": [
+    "promoters",
+    "passives",
+    "detractors"
+   ],
+   "responses": [
+    {
+     "lever": "updates",
+     "kpi": "nps",
+     "per": 10,
+     "effect": 2.4,
+     "shift_from": "detractors",
+     "shift_to": "promoters",
+     "scale": {
+      "table": "seg",
+      "key": "segment_id",
+      "column": "mult",
+      "kind": "absolute"
+     }
+    }
+   ]
+  }
+ ],
+ "kpis": [
+  {
+   "name": "nps",
+   "numerator": "promoters - detractors",
+   "denominator": "responses",
+   "unit": "points"
+  }
+ ]
+}

@@ -1,0 +1,4 @@
+segment_id,segment_name,max_driver,mult
+S1,New,95,0.8
+S2,Established,95,1.0
+S3,High-Touch,105,1.2
