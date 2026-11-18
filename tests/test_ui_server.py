@@ -87,3 +87,19 @@ def test_a_broken_hook_shows_its_reason(ui):
     (p / "model" / "custom.py").write_text("def adjust(spec):\n    raise RuntimeError('broken on purpose')\n")
     code, r = call(base, "/api/apps/project/baseline")
     assert code == 500 and "broken on purpose" in r["error"]
+
+
+def test_a_post_from_another_website_is_refused(ui):
+    """A page on another site cannot approve steps or change the model through the local server."""
+    base, p = ui
+    req = urllib.request.Request(base + "/api/apps/project/building", json.dumps({"step": 2, "decision": "approve"}).encode(),
+                                 {"Content-Type": "application/json", "Origin": "https://evil.example"})
+    with pytest.raises(urllib.error.HTTPError) as e:
+        urllib.request.urlopen(req, timeout=30)
+    assert e.value.code == 403
+    req = urllib.request.Request(base + "/api/apps/project/building", json.dumps({"step": 2, "decision": "approve"}).encode(),
+                                 {"Content-Type": "text/plain"})
+    with pytest.raises(urllib.error.HTTPError) as e:
+        urllib.request.urlopen(req, timeout=30)
+    assert e.value.code == 415
+    assert not (p / "build" / "decisions.json").exists()

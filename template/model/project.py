@@ -4,7 +4,9 @@ import json
 import os
 from pathlib import Path
 
+from sfm import fixes
 from sfm.canonical import load_tables
+from sfm.catalog import is_table
 from sfm.session_spec import SpecStages
 
 from . import model
@@ -19,12 +21,15 @@ class Project(SpecStages):
         self.simulate = model.simulate
 
     def _spec_tables(self):
-        files = sorted(p for p in (self.root / "data").iterdir() if p.suffix in (".csv", ".parquet"))
-        return load_tables([str(p) for p in files])
+        """The tables as SFM reads them (files and folders of parts, by name), with the use case's approved transforms."""
+        paths = sorted(str(p) for p in (self.root / "data").iterdir() if not p.name.startswith(".") and is_table(p))
+        return fixes.apply(load_tables(paths), self.s.get("extensions"))
 
     def save(self):
-        tmp = self.file.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.s, indent=1, default=str))
+        import tempfile
+        fd, tmp = tempfile.mkstemp(dir=self.file.parent, suffix=".tmp")
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(self.s, indent=1, default=str))
         os.replace(tmp, self.file)
 
     def conversations(self):

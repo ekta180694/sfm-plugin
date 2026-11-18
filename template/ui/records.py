@@ -2,6 +2,8 @@
 append-only decisions.json. Used by step.py, decide.py and the project's server. Standard library only."""
 import json
 import os
+import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -15,9 +17,31 @@ def _now():
 
 def _write(p: Path, data):
     p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=1))
+    fd, tmp = tempfile.mkstemp(dir=p.parent, suffix=".tmp")    # each writer its own temp file
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(data, indent=1))
     os.replace(tmp, p)                         # a reader sees the old file or the new one, never half
+
+
+@contextmanager
+def _locked(root):
+    """One writer at a time for a project's records (the tab and the chat may decide at the same moment)."""
+    p = Path(root) / "build" / ".lock"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "a+") as f:
+        try:
+            import fcntl
+            fcntl.flock(f, fcntl.LOCK_EX)
+        except ImportError:                    # Windows
+            import msvcrt
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+        yield
+
+
+def _check_step(n):
+    if not isinstance(n, int) or not 1 <= n <= len(STEPS):
+        raise ValueError(f"step must be 1 to {len(STEPS)}, not {n!r}")
 
 
 def journey(root) -> dict:
@@ -32,12 +56,14 @@ def save_journey(root, j):
 
 
 def write_step(root, n: int, record: dict) -> Path:
+    _check_step(n)
     name = STEPS[n - 1]
     p = Path(root) / "build" / "steps" / f"{n}-{name}.json"
-    _write(p, {"step": n, "name": name, "at": _now(), **record})
-    j = journey(root)
-    j["status"][name], j["current"] = "waiting", n
-    save_journey(root, j)
+    with _locked(root):
+        _write(p, {"step": n, "name": name, "at": _now(), **record})
+        j = journey(root)
+        j["status"][name], j["current"] = "waiting", n
+        save_journey(root, j)
     return p
 
 
@@ -55,9 +81,10 @@ def decisions(root) -> list[dict]:
     except ValueError as e:
         raise ValueError(f"build/decisions.json is not valid JSON ({e}); fix or restore it, nothing was changed") from None
     for i, x in enumerate(xs, 1):
-        if not isinstance(x, dict) or x.get("decision") not in CHOICES or not isinstance(x.get("step"), int):
-            raise ValueError(f"build/decisions.json line {i}: {json.dumps(x)[:120]} is not a decision "
-                             f"(a step and approve, feedback or back)")
+        if not isinstance(x, dict) or x.get("decision") not in CHOICES or not isinstance(x.get("step"), int) \
+                or not 1 <= x["step"] <= len(STEPS):
+            raise ValueError(f"build/decisions.json entry {i}: {json.dumps(x)[:120]} is not a decision "
+                             f"(a step 1 to {len(STEPS)} and approve, feedback or back)")
     return xs
 
 
@@ -68,6 +95,12 @@ def latest(root, step: int) -> dict | None:
 def decide(root, step: int, decision: str, text: str = "", who: str = "", source: str = "chat") -> dict:
     if decision not in CHOICES:
         raise ValueError(f"a decision is approve, feedback or back, not {decision!r}")
+    _check_step(step)
+    with _locked(root):
+        return _decide(root, step, decision, text, who, source)
+
+
+def _decide(root, step, decision, text, who, source):
     xs = decisions(root)
     x = {"step": int(step), "decision": decision, "text": text, "who": who, "at": _now(), "source": source}
     _write(Path(root) / "build" / "decisions.json", xs + [x])

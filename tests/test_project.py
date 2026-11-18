@@ -54,3 +54,23 @@ def test_a_wrong_effect_direction_fails(project):
     (project / "tests" / "expectations.json").write_text(
         json.dumps([{"lever": lv["column"], "kpi": k, "direction": wrong, "why": "on purpose"}]))
     assert _pytest(project).returncode != 0
+
+
+def test_approved_data_transforms_are_applied_as_in_sfm(project):
+    """A use case's approved transform (a new table made by one SELECT) exists in the project too."""
+    s = json.loads((project / "model" / "session.json").read_text())
+    s["extensions"] = [{"fix": {"kind": "transform", "name": "seg_copy", "sql": "SELECT * FROM seg"}, "status": "approved"}]
+    (project / "model" / "session.json").write_text(json.dumps(s))
+    tabs = _project_class(project)(project)._spec_tables()
+    assert "seg_copy" in tabs and len(tabs["seg_copy"]) == len(tabs["seg"])
+
+
+def test_a_folder_of_parts_is_a_table_as_in_sfm(project):
+    import pandas as pd
+    (project / "data" / "obs").mkdir()
+    df = pd.read_csv(project / "data" / "obs.csv")       # SFM: a folder of at least two parts is one table
+    df.iloc[: len(df) // 2].to_parquet(project / "data" / "obs" / "part-0.parquet")
+    df.iloc[len(df) // 2:].to_parquet(project / "data" / "obs" / "part-1.parquet")
+    (project / "data" / "obs.csv").unlink()
+    tabs = _project_class(project)(project)._spec_tables()
+    assert "obs" in tabs and len(tabs["obs"]) == len(df)

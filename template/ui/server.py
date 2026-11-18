@@ -88,8 +88,19 @@ class H(BaseHTTPRequestHandler):
                               [("Content-Disposition", 'attachment; filename="scenario_workbook.xlsx"')])
         return self._send(200, modelpage.handle(project(), method, rest, body))
 
+    def _local_post(self):
+        """Only this machine's pages may change the model: a POST from another site gets 403, a body that is not JSON 415."""
+        origin = self.headers.get("Origin")
+        if origin and origin.split("://", 1)[-1].split(":")[0] not in ("127.0.0.1", "localhost"):
+            return self._send(403, {"error": "requests from other sites are refused"}) or False
+        if not (self.headers.get("Content-Type") or "").startswith("application/json"):
+            return self._send(415, {"error": "send JSON (Content-Type: application/json)"}) or False
+        return True
+
     def _safe(self, method):
         try:
+            if method == "POST" and not self._local_post():
+                return
             self._route(method)
         except (ValueError, KeyError) as e:
             self._send(400, {"error": str(e).strip("'\"")})

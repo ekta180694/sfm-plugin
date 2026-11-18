@@ -80,3 +80,35 @@ def test_check_reports_failures(tmp_path):
 
 def test_template_assets_are_in_sync():
     assert run(ROOT / "scripts" / "sync_template.py", "--check").returncode == 0
+
+
+def test_export_with_the_data_already_in_the_project(tmp_path):
+    """The skill copies the data at step 2 and passes the same files at step 5."""
+    p = tmp_path / "proj"
+    run(S / "new_project.py", p)
+    (p / "data").mkdir(exist_ok=True)
+    for n in ("seg", "obs"):
+        shutil.copy2(SAMPLE / "data" / f"{n}.csv", p / "data" / f"{n}.csv")
+    out = run(S / "export.py", p, _export(tmp_path), "--data", p / "data" / "seg.csv", p / "data" / "obs.csv")
+    assert out.returncode == 0, out.stderr
+    assert json.loads(out.stdout)["ok"]
+
+
+def test_export_of_an_error_says_so(tmp_path):
+    p = tmp_path / "proj"
+    run(S / "new_project.py", p)
+    (tmp_path / "x.json").write_text(json.dumps({"error": "409: Level 2 needs a process-specification model"}))
+    out = run(S / "export.py", p, tmp_path / "x.json")
+    r = json.loads(out.stdout)
+    assert r["ok"] is False and "process-specification" in r["note"] and not (p / "model" / "session.json").exists()
+
+
+def test_a_parquet_table_counts_as_present(tmp_path):
+    import pandas as pd
+    p = tmp_path / "proj"
+    run(S / "new_project.py", p)
+    (p / "data").mkdir(exist_ok=True)
+    pd.read_csv(SAMPLE / "data" / "obs.csv").to_parquet(p / "data" / "obs.parquet")
+    r = json.loads(run(S / "export.py", p, _export(tmp_path), "--data", SAMPLE / "data" / "seg.csv").stdout)
+    assert r["ok"] and r["missing"] == []
+    assert json.loads(run(S / "check.py", p).stdout)["ok"]

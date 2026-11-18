@@ -41,7 +41,7 @@ def test_a_damaged_decision_file_names_the_line(tmp_path):
     R.decide(tmp_path, 2, "approve")
     f = tmp_path / "build" / "decisions.json"
     f.write_text(json.dumps(json.loads(f.read_text()) + [{"step": 3, "decision": "maybe"}]))
-    with pytest.raises(ValueError, match="line 2"):
+    with pytest.raises(ValueError, match="entry 2"):
         R.decisions(tmp_path)
 
 
@@ -55,3 +55,34 @@ def test_a_half_written_decision_file_is_refused(tmp_path):
 def test_unknown_decision_is_refused(tmp_path):
     with pytest.raises(ValueError, match="approve, feedback or back"):
         R.decide(tmp_path, 2, "ok")
+
+
+def _many(root, k):
+    sys.path.insert(0, str(Path(__file__).parents[1] / "skills" / "sfm-model-builder" / "scripts"))
+    import records
+    for _ in range(k):
+        records.decide(root, 2, "feedback", text="x")
+
+
+def test_concurrent_decisions_are_all_kept(tmp_path):
+    """A tab click and a chat decision at the same moment: both are kept (append-only)."""
+    import multiprocessing as mp
+    R.journey(tmp_path)
+    ps = [mp.Process(target=_many, args=(tmp_path, 30)) for _ in range(2)]
+    [p.start() for p in ps]
+    [p.join() for p in ps]
+    assert len(R.decisions(tmp_path)) == 60
+
+
+@pytest.mark.parametrize("step", [0, 9, -1])
+def test_a_step_outside_the_journey_is_refused_before_anything_is_written(tmp_path, step):
+    with pytest.raises(ValueError, match="step"):
+        R.decide(tmp_path, step, "approve")
+    assert R.decisions(tmp_path) == []
+
+
+def test_a_saved_decision_for_no_such_step_is_refused(tmp_path):
+    (tmp_path / "build").mkdir()
+    (tmp_path / "build" / "decisions.json").write_text(json.dumps([{"step": 9, "decision": "approve"}]))
+    with pytest.raises(ValueError, match="entry 1"):
+        R.decisions(tmp_path)

@@ -7,7 +7,8 @@ description: Build a simulation model of a business with a UI to use it, step by
 
 Guide the user from nothing to a working model with a UI. Plain, simple English. One thing at a time. Always say
 where they are: "Step 4 of 8: the data". Never invent a number: every figure comes from SFM or from the project's
-`simulate()`. Never ask for, type or store a password. Scripts are in this skill's `scripts/` folder.
+`simulate()`. Never ask for, type or store a password. Scripts are in this skill's `scripts/` folder; run them with
+SFM's Python, `~/.sfm/venv/bin/python` (Windows: `~\.sfm\venv\Scripts\python.exe`), written `python` below.
 
 ## Step 0: setup (first time; later a quick re-check)
 
@@ -57,8 +58,8 @@ redone.
 **Step 4 of 8: data.** What one row is (with evidence), the time column, each column's role. Never guess the grain: ask.
 **Step 5 of 8: core model with SFM.** `sfm_create_use_case` with the description and the files, and take SFM through its
 steps with the user's agreement at each (as in Level 1). If SFM's own drafting does not fit, fill the model form together
-(`method/modelling.md`). Then `sfm_export` to a file and `python scripts/export.py <project> <file> --data <the files in
-data/>`. If it lists missing tables, ask for them.
+(`method/modelling.md`). Then `sfm_export` with `path` set to a file in the project (it writes the file itself; never copy the record
+by hand) and `python scripts/export.py <project> <file> --data <the files in data/>`. If it lists missing tables, ask for them.
 **Step 6 of 8: process and logic.** Deeper changes in the project (`method/modelling.md`): the process in
 `model/procspec.json` (then `python scripts/compile.py <project>`), code rules in `model/custom.py`, or new logic in
 `simulate()` in `model/model.py` (keep its result form). Show the process diagram. Add each approved effect direction to
