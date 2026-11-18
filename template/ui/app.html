@@ -1,0 +1,1010 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Simulation.AI</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- The model page: Control Tower Simulation.AI's UI as is (its stylesheet, layout and components), filled with this
+     model's own data. Only the name changes. -->
+<link rel="stylesheet" href="/ct.css">
+<style>.sig-toggle::after{content:""}</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+</head>
+<body class="bg-ink-50 text-ink-900 text-[14px]">
+<div class="flex min-h-screen">
+  <aside class="w-64 shrink-0 bg-white border-r border-ink-200">
+    <div class="px-5 py-4 border-b border-ink-200"><div id="brand" class="text-brand-600 font-bold text-[15px]">&nbsp;</div>
+      <div id="sub" class="text-ink-400 text-[11px]">Simulation.AI</div></div>
+    <nav id="nav" class="py-2"></nav>
+  </aside>
+  <main class="flex-1 min-w-0">
+    <header id="hdr" class="bg-white border-b border-ink-200 px-8 py-4"><h1 class="text-[19px] font-semibold text-ink-900">&nbsp;</h1></header>
+    <div id="content" class="p-6"></div>
+  </main>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
+const SLUG = (location.pathname.match(/^\/apps\/([a-z0-9-]+)/) || [])[1];
+const TAB = new URLSearchParams(location.search).get("tab") || "baseline";
+// CT's tabs, icons and subtitles (Control Tower Simulation.AI, gui_app/app.py)
+const TABS_ALL = [["building", "Building Model"], ["baseline", "Baseline"], ["studio", "Scenario Studio"], ["optimize", "Optimize & ROI"],
+              ["drivers", "Drivers & Forecast"], ["alerts", "Watchtower"], ["ask", "Ask Simulation.AI"]];
+let TABS = TABS_ALL;   // a server may offer fewer tabs (app.tabs; a Level 2 project)
+const SUBS = {building: "How this model was built: every step, what was found, and what was approved.", studio: "Set the drivers, run a what-if, and watch the KPIs and the process flow respond.",
+              optimize: "The best action for a scenario and its ROI.", drivers: "What moves the KPIs, and the forward forecast.",
+              alerts: "Watch the horizon, understand the causes, and get the recommended actions.", ask: ""};
+const ICON = {building: '<path d="M3 21h18"/><path d="M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/>', baseline: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>',
+  studio: '<circle cx="16" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/><path d="M4 6h10"/><path d="M18 6h2"/><path d="M4 12h3"/><path d="M11 12h9"/><path d="M4 18h11"/><path d="M19 18h1"/>',
+  optimize: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/>',
+  drivers: '<path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/>',
+  alerts: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
+  ask: '<path d="M12 3l1.8 4.9L18.7 9.7l-4.9 1.8L12 16.4l-1.8-4.9L5.3 9.7l4.9-1.8z"/>'};
+const icon = t => `<svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICON[t]}</svg>`;
+// CT's components
+function section(sid, title, body, badge = "", open = false) {
+  const b = badge ? `<span class="ml-2 text-[9px] bg-ink-100 text-ink-500 px-2 py-0.5 rounded-full">${badge}</span>` : "";
+  return `<div class="bg-white rounded-xl border border-ink-200 mb-3"><button type="button" onclick="toggleSec('${sid}')" class="w-full flex items-center px-4 py-3">`
+    + `<span id="arr${sid}" class="text-ink-400 text-[11px] mr-2 w-3">${open ? "&#9662;" : "&#9656;"}</span>`
+    + `<span class="text-[13px] font-semibold text-ink-800">${title}</span>${b}</button>`
+    + `<div id="sec${sid}" class="px-4 pb-4 ${open ? "" : "hidden"}">${body}</div></div>`;
+}
+const ON_OPEN = {};
+function toggleSec(id) {
+  const el = $("sec" + id), ar = $("arr" + id); if (!el) return;
+  const h = el.classList.toggle("hidden"); if (ar) ar.innerHTML = h ? "&#9656;" : "&#9662;";
+  if (!h && ON_OPEN[id]) ON_OPEN[id]();
+}
+const pill = t => `<span class="bg-brand-50 text-brand-700 border border-brand-200 text-[9px] font-semibold px-2 py-0.5 rounded-full">${t}</span>`;
+function kpiBlock(title, value, delta, desc, subs, pills = "", accent = "#3366ff") {
+  const box = ([l, v, p]) => `<div class="bg-brand-50/60 border border-brand-100 rounded px-1.5 py-1 text-center">`
+    + `<div class="text-[8px] text-ink-500 leading-none mb-0.5">${l}</div><div class="text-[13px] font-bold text-ink-900 leading-none">${v}</div>`
+    + (p ? `<div class="text-[7.5px] text-ink-400 leading-none mt-0.5">prior ${p}</div>` : "") + `</div>`;
+  return `<div class="bg-white rounded-xl border border-ink-200 px-4 py-2.5 mb-2.5" style="border-left:4px solid ${accent}">`
+    + `<div class="flex items-center justify-between mb-1"><h3 class="text-[11px] font-semibold text-ink-700 uppercase tracking-wide">${title}</h3>`
+    + `<div class="flex gap-1.5 items-center">${pills}</div></div><div class="flex gap-4 items-center">`
+    + `<div class="w-[120px] shrink-0"><div class="text-[26px] font-bold text-ink-900 leading-none">${value}</div><div class="text-[10px] mt-0.5">${delta}</div></div>`
+    + `<div class="w-[240px] shrink-0 text-[9.5px] text-ink-400 leading-tight border-l border-ink-100 pl-4">${desc}</div>`
+    + (subs.length ? `<div class="flex-1 grid grid-cols-5 gap-1.5">${subs.map(box).join("")}</div>` : "") + `</div></div>`;
+}
+function delta(d, unit, goodLow, tail) {
+  const good = goodLow ? d <= 0 : d >= 0;
+  return `<span class="text-status-${good ? "ok" : "danger"} font-medium">${d < 0 ? "&#9660;" : "&#9650;"} ${d >= 0 ? "+" : "-"}${fmt(Math.abs(d))}${unit === "%" ? "pp" : unit ? " " + esc(unit) : ""}${tail}</span>`;
+}
+const panel = (title, cid, span = 1, h = 150, note = "") => `<div class="bg-white rounded-xl border border-ink-200 p-4 col-span-${span}">`
+  + `<h3 class="text-[11.5px] font-semibold text-ink-700">${title}</h3>${note ? `<p class="text-ink-400 text-[9.5px] mb-1">${note}</p>` : ""}`
+  + `<div style="height:${h}px"><canvas id="${cid}"></canvas></div></div>`;
+const fmt = v => v === null || v === undefined || isNaN(v) ? "—" : Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : (+v).toFixed(Math.abs(v) >= 100 ? 0 : 1);
+const PAL = ["#3366ff", "#16a34a", "#d97706", "#db2777", "#0891b2", "#7c3aed", "#1836e1", "#64738c"];
+if (window.Chart) {                // CT's chart defaults
+  Chart.defaults.font.family = "ui-sans-serif,system-ui,sans-serif"; Chart.defaults.font.size = 10; Chart.defaults.color = "#64738c";
+  Chart.defaults.plugins.legend.labels.boxWidth = 9; Chart.defaults.plugins.legend.labels.font = {size: 9};
+  Chart.defaults.plugins.tooltip.backgroundColor = "#1f2532"; Chart.defaults.plugins.tooltip.padding = 8;
+  Chart.defaults.plugins.tooltip.cornerRadius = 6; Chart.defaults.maintainAspectRatio = false;
+}
+const axis = (x, y) => ({x: {title: {display: true, text: x, font: {size: 9}, color: "#94a3b8"}, ticks: {font: {size: 8}, maxTicksLimit: 12}},
+                         y: {title: {display: true, text: y, font: {size: 9}, color: "#94a3b8"}, ticks: {font: {size: 9}}}});
+const CHARTS = {};
+function chart(id, cfg) { const el = $(id); if (!el || !window.Chart) return; if (CHARTS[id]) CHARTS[id].destroy();
+  CHARTS[id] = new Chart(el, {...cfg, options: {interaction: {mode: "index", intersect: false}, ...(cfg.options || {})}}); }
+// CT's shared plain-English panel: it always says who wrote the sentence — the model, or one of our own rules
+function narrPanel(id, state, txt, meta) {
+  const el = $(id); if (!el) return;
+  if (state === "loading") { el.innerHTML = '<div class="rounded-xl border border-ink-200 bg-white p-4"><div class="flex items-center gap-2"><span class="text-[13px] font-semibold text-ink-800">Reading the numbers</span><span class="text-[10px] text-ink-400">interpreting&hellip;</span></div><div class="mt-2 space-y-1.5"><div class="h-2 bg-ink-100 rounded animate-pulse"></div><div class="h-2 bg-ink-100 rounded animate-pulse w-5/6"></div></div></div>'; return; }
+  meta = meta || {};
+  const tag = meta.source === "model" ? '<span class="text-[9px] px-1.5 py-0.5 rounded-full border bg-brand-50 text-brand-700 border-brand-200">interpreted</span>'
+    : '<span class="text-[9px] px-1.5 py-0.5 rounded-full border bg-ink-50 text-ink-500 border-ink-200">standard reading</span>';
+  el.innerHTML = '<div class="rounded-xl border border-ink-200 border-l-4 border-l-brand-400 bg-white p-4"><div class="flex items-center gap-2 mb-1"><h4 class="text-[13px] font-semibold text-ink-800">'
+    + (meta.heading || "What this means") + "</h4>" + tag + '</div><p class="text-[12.5px] text-ink-700 leading-relaxed">' + esc(txt) + '</p><p class="text-[10px] text-ink-400 mt-2">'
+    + (meta.footnote || "Every figure above comes from the simulation. This paragraph only explains them &mdash; it does not recalculate anything.") + "</p></div>";
+}
+function askNarration(id, kind, payload, fallback, meta) {
+  narrPanel(id, "loading");
+  fetch(`/api/apps/${SLUG}/narrate`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({kind, payload, fallback})})
+    .then(r => r.json()).then(r => narrPanel(id, "done", r.text || fallback, Object.assign({}, meta, r)))
+    .catch(() => narrPanel(id, "done", fallback, Object.assign({source: "fallback"}, meta)));
+}
+function signOut() { fetch("/api/logout", {method: "POST", body: "{}"}).then(() => { location.href = "/"; }); }
+async function api(p) { const r = await fetch(p); if (r.status === 401) { location.href = "/"; return null; }   // sign in on the landing page
+  const d = await r.json(); if (!r.ok) throw new Error(d.error || r.status); return d; }
+
+let APP = null, UC = null, BL = null;
+function chrome() {
+  $("brand").textContent = APP ? APP.title : "Simulation.AI";
+  $("sub").textContent = `Simulation.AI · version ${APP ? APP.live : ""}`;
+  document.title = `${APP ? APP.title + " " : ""}Simulation.AI`;
+  $("nav").innerHTML = TABS.map(([t, n]) => `<a href="/apps/${SLUG}?tab=${t}" class="flex items-center gap-2.5 px-5 py-2 text-[13px] ${t === TAB
+    ? "bg-brand-50 text-brand-700 border-l-4 border-brand-500" : "text-ink-600 border-l-4 border-transparent hover:bg-ink-50"}">${icon(t)}<span>${n}</span></a>`).join("")
+    + `<div class="mt-4 mx-5 pt-3 border-t border-ink-100">${ME && ME.user ? `<p class="text-[11px] text-ink-500 mb-1 truncate">&#128100; ${esc(ME.user)}</p>` : ""}`
+    + (APP && APP.project ? "" : `<a href="/apps/${SLUG}?tab=review" class="block text-[11.5px] text-brand-700 hover:underline mb-1">&#128203; Review log</a>`
+    + `<a href="/" class="block text-[11.5px] text-brand-700 hover:underline mb-1">&#8592; All simulation models</a>`
+    + (ME && ME.user ? `<button onclick="signOut()" class="text-[11.5px] text-ink-500 hover:text-brand-700 hover:underline">Sign out</button>` : "")) + `</div>`;
+  const name = TAB === "review" ? "Review log" : (TABS.find(x => x[0] === TAB) || TABS[0])[1];
+  $("hdr").innerHTML = TAB === "ask" ? `<h1 class="text-[19px] font-semibold text-ink-900">&nbsp;</h1>`
+    : `<h1 class="text-[19px] font-semibold text-ink-900">${name}</h1><p class="text-ink-400 text-[12px]">${TAB === "baseline" && BL
+      ? `Current status of the business — the objective KPIs, by period or ${esc(BL.group_column || "group")}. Horizon: ${BL.forecast.periods.length} ${esc(BL.time_unit)}s.`
+      : esc(SUBS[TAB] || "")}</p>`;
+}
+
+// ---------- Baseline: Baseline — Current Status, Historical Review ----------
+const label = k => { const t = String(k ?? "").replace(/_/g, " "); return esc(t.charAt(0).toUpperCase() + t.slice(1)); };
+let GRP = "", PER = "all";
+function baselineView() {
+  const B = BL, H = B.history, F = B.forecast, n = H.periods.length;
+  const gopts = `<option value="">All ${label(B.group_column || "groups")} (portfolio)</option>` + H.groups.map(g => `<option value="${esc(g)}" ${g === GRP ? "selected" : ""}>${esc(g)}</option>`).join("");
+  const popts = `<option value="all">All periods (average)</option>` + F.periods.map(p => `<option value="${p}" ${p === PER ? "selected" : ""}>${p}</option>`).join("");
+  const controls = `<div class="flex flex-wrap items-end gap-4 mb-4"><div><label class="text-[10px] text-ink-500 block mb-1">${label(B.group_column || "Group")} view</label>`
+    + `<select id="grpsel" onchange="GRP=this.value;drawBaseline()" class="border border-ink-300 rounded-md px-3 py-1.5 text-[13px] bg-white w-72">${gopts}</select></div>`
+    + `<div><label class="text-[10px] text-ink-500 block mb-1">${label(B.time_unit)}</label>`
+    + `<select id="persel" onchange="PER=this.value;drawBaseline()" class="border border-ink-300 rounded-md px-2 py-1.5 text-[13px] bg-white">${popts}</select></div></div>`;
+  const pi = PER === "all" ? null : F.periods.indexOf(PER);
+  const blocks = B.kpis.map((k, i) => {
+    const f = F.kpis[k.name], avg = a => a.reduce((s, v) => s + v, 0) / a.length;
+    const val = GRP ? (H.by_group[k.name][GRP] || [])[n - 1] : pi === null ? avg(f.p50) : f.p50[pi];
+    const lo = pi === null ? avg(f.p10) : f.p10[pi], hi = pi === null ? avg(f.p90) : f.p90[pi];
+    const last = GRP ? (H.by_group[k.name][GRP] || [])[n - 2] : H.kpis[k.name][n - 1];
+    const u = k.unit === "%" ? "%" : "";
+    const value = `${fmt(val)}${u}` + (GRP ? "" : `<span class="text-[10px] font-normal text-ink-400 ml-1">(${fmt(lo)}–${fmt(hi)})</span>`);
+    const d = val - last, tail = GRP ? " vs prior period" : " vs last actual";
+    const subs = H.groups.slice(0, 5).map(g => [esc(g), fmt((H.by_group[k.name][g] || [])[n - 1]) + u, fmt((H.by_group[k.name][g] || [])[n - 2]) + u]);
+    const desc = `${label(k.name)} = ${esc(k.formula)}. ${k.better === "lower" ? "Lower is better." : k.better === "higher" ? "Higher is better." : ""} `
+      + (GRP ? `Latest actual for ${esc(GRP)} (${H.periods[n - 1]}).` : `Forecast ${pi === null ? "average over the horizon" : "for " + PER}; P10–P90 in brackets.`);
+    return kpiBlock(label(k.name), value, delta(d, k.unit, k.better === "lower", tail), desc, subs,
+                    k.target !== null && k.target !== undefined ? pill(`Target ${k.better === "lower" ? "&lt;" : "&gt;"} ${esc(k.target)}${u}`) : "",
+                    ["#1c2e8f", "#1836e1", "#3366ff", "#0891b2"][i % 4]);
+  }).join("");
+  const charts = `<div class="grid grid-cols-4 gap-4">` + B.kpis.map((k, i) =>
+      panel(`${label(k.name)} — trend`, `cTrend${i}`, 2, 150, `history${GRP ? " · " + esc(GRP) : ""} and forecast · shaded = P10–P90`)
+      + panel(`${label(k.name)} by ${label(B.group_column || "group")}`, `cGrp${i}`, 2, 150, `latest actual (${H.periods[n - 1]}) vs prior`)).join("")
+    + `</div><div class="mt-4">` + panel("The data behind the KPIs", "cCols", 1, 170, `per ${esc(B.time_unit)} · the columns in the KPI formulas and the levers`) + `</div>`;
+  return section("bl", "Baseline — Current Status", controls + blocks + charts, `${F.periods.length}-${esc(B.time_unit)} forward`, true)
+    + section("hist", "Historical Review", histView(), "our own actuals", false);
+}
+function histView() {
+  const H = BL.history;
+  const trend = `<div class="grid grid-cols-3 gap-3">` + Object.keys(H.columns).map((c, i) =>
+    `<div><p class="text-[11px] font-medium text-ink-700 mb-1">${label(c)}</p><div style="height:180px"><canvas id="ht${i}"></canvas></div></div>`).join("") + `</div>`;
+  const snap = `<div class="flex items-center gap-2 mb-3"><label class="text-[11px] text-ink-600 font-medium">${label(BL.time_unit)}</label>`
+    + `<select id="histWk" onchange="drawSnap()" class="border border-ink-300 rounded px-2 py-1 text-[12px]">${H.periods.map(p => `<option ${p === H.periods[H.periods.length - 1] ? "selected" : ""}>${p}</option>`).join("")}</select>`
+    + `<span class="text-[10px] text-ink-400">pick any ${esc(BL.time_unit)} to see its actuals</span></div>`
+    + `<div id="histTiles" class="grid grid-cols-4 gap-2 mb-4"></div><div class="grid grid-cols-3 gap-3" id="histBars"></div>`;
+  const note = `<p class="text-[11px] text-ink-500 mb-3">Each KPI and the columns behind it, per ${esc(BL.time_unit)}, from your own data (${H.periods[0]} to ${H.periods[H.periods.length - 1]}). Pick a ${esc(BL.time_unit)} below to see that ${esc(BL.time_unit)} by ${label(BL.group_column || "group")}.</p>`;
+  return note + section("htrend", "Trend over time", trend, "", false) + section("hsnap", "Snapshot", snap, "", false);
+}
+function drawBaseline() {
+  $("content").innerHTML = baselineView();
+  const B = BL, H = B.history, F = B.forecast, n = H.periods.length, tail = Math.max(0, n - 24);
+  B.kpis.forEach((k, i) => {
+    const hs = (GRP ? H.by_group[k.name][GRP] : H.kpis[k.name]).slice(tail), L = H.periods.slice(tail).concat(F.periods);
+    const pad = a => Array(hs.length).fill(null).concat(a), f = F.kpis[k.name];
+    const ds = [{label: "Actual", data: hs.concat(Array(F.periods.length).fill(null)), borderColor: "#1c2e8f", borderWidth: 2, pointRadius: 0, tension: .25}];
+    if (!GRP) ds.push({label: "P90", data: pad(f.p90), borderColor: "transparent", backgroundColor: "rgba(51,102,255,.12)", pointRadius: 0, fill: "+1"},
+                      {label: "P10", data: pad(f.p10), borderColor: "transparent", pointRadius: 0, fill: false},
+                      {label: "Forecast (P50)", data: pad(f.p50), borderColor: "#3366ff", borderDash: [5, 4], borderWidth: 2, pointRadius: 0});
+    if (k.target !== null && k.target !== undefined) ds.push({label: "Target", data: L.map(() => +k.target), borderColor: "#dc2626", borderDash: [3, 3], borderWidth: 1, pointRadius: 0});
+    chart(`cTrend${i}`, {type: "line", data: {labels: L, datasets: ds}, options: {plugins: {legend: {labels: {filter: x => !/^P(10|90)$/.test(x.text)}}}, scales: axis(B.time_unit, label(k.unit || k.name))}});
+    chart(`cGrp${i}`, {type: "bar", data: {labels: H.groups, datasets: [
+      {label: H.periods[n - 1], data: H.groups.map(g => (H.by_group[k.name][g] || [])[n - 1]), backgroundColor: "#3366ff"},
+      {label: H.periods[n - 2] || "prior", data: H.groups.map(g => (H.by_group[k.name][g] || [])[n - 2]), backgroundColor: "#c7d2fe"}]},
+      options: {scales: axis(label(B.group_column || "group"), label(k.unit || k.name))}});
+  });
+  chart("cCols", {type: "line", data: {labels: H.periods.slice(tail), datasets: Object.entries(H.columns).map(([c, v], i) => ({label: label(c), data: v.slice(tail),
+    borderColor: PAL[i % PAL.length], borderWidth: 1.6, pointRadius: 0, tension: .25, yAxisID: i ? "y1" : "y"}))},
+    options: {scales: {...axis(B.time_unit, ""), y1: {position: "right", grid: {drawOnChartArea: false}, ticks: {font: {size: 9}}}}}});
+  ON_OPEN.htrend = drawTrend; ON_OPEN.hsnap = drawSnap;
+}
+function drawTrend() {
+  const H = BL.history;
+  Object.entries(H.columns).forEach(([c, v], i) => chart(`ht${i}`, {type: "line", data: {labels: H.periods, datasets: [{label: label(c), data: v,
+    borderColor: PAL[i % PAL.length], borderWidth: 1.6, pointRadius: 0, tension: .25, fill: false}]}, options: {plugins: {legend: {display: false}}, scales: axis(BL.time_unit, label(c))}}));
+}
+function drawSnap() {
+  const H = BL.history, p = $("histWk").value, j = H.periods.indexOf(p);
+  $("histTiles").innerHTML = BL.kpis.map(k => `<div class="bg-white rounded-lg border border-ink-200 px-3 py-2"><div class="text-[9.5px] text-ink-400 uppercase tracking-wide">${label(k.name)}</div>`
+    + `<div class="text-[18px] font-bold text-ink-900">${fmt(H.kpis[k.name][j])}${k.unit === "%" ? "%" : ""}</div></div>`).join("")
+    + Object.entries(H.columns).slice(0, 4 - BL.kpis.length % 4 || 4).map(([c, v]) => `<div class="bg-white rounded-lg border border-ink-200 px-3 py-2"><div class="text-[9.5px] text-ink-400 uppercase tracking-wide">${label(c)}</div>`
+    + `<div class="text-[18px] font-bold text-ink-900">${fmt(v[j])}</div></div>`).join("");
+  $("histBars").innerHTML = BL.kpis.map((k, i) => `<div><p class="text-[11px] font-medium text-ink-700 mb-1">${label(k.name)} by ${label(BL.group_column || "group")}</p><div style="height:180px"><canvas id="hs${i}"></canvas></div></div>`).join("");
+  BL.kpis.forEach((k, i) => chart(`hs${i}`, {type: "bar", data: {labels: H.groups, datasets: [{label: p, data: H.groups.map(g => (H.by_group[k.name][g] || [])[j]),
+    backgroundColor: H.groups.map((_, x) => PAL[x % PAL.length])}]}, options: {plugins: {legend: {display: false}}, scales: axis(label(BL.group_column || "group"), label(k.unit || k.name))}}));
+}
+
+
+// ---------- Scenario Studio (CT's top panel + Scenario Impact, Flow Response, Where to Intervene, Compare) ----------
+let ST = null, SET = {}, LAST = null, LEDGER = [], WB = null, LIVE_T = null;
+const leverRow = (lv, i) => `<div class="flex items-center gap-2 py-1" title="${esc(lv.desc)} The change applies to every ${esc(BLG())}.">`
+  + `<span class="h-1.5 w-1.5 rounded-full bg-brand-500 shrink-0"></span><span class="text-[11px] text-ink-700 w-[86px] shrink-0">${label(lv.label)}</span>`
+  + `<input type="range" id="lv${i}" min="${lv.lo}" max="${lv.hi}" step="${lv.step}" value="${SET[lv.column] || 0}" class="flex-1 accent-brand-600" oninput="syncL(${i}, this.value)">`
+  + `<input type="number" id="num${i}" value="${SET[lv.column] || 0}" min="${lv.lo}" max="${lv.hi}" step="${lv.step}" class="w-12 border border-ink-300 rounded px-1 py-0.5 text-[11px] text-right" oninput="syncL(${i}, this.value)">`
+  + `<span id="badge${i}" class="text-[10px] font-bold text-brand-700 w-9 text-right shrink-0">${fmt(SET[lv.column] || 0)}${esc(lv.unit)}</span></div>`;
+const BLG = () => (ST && ST.group_column) || "group";
+function syncL(i, v) {
+  const lv = ST.levers[i]; v = Math.max(lv.lo, Math.min(lv.hi, +v || 0));
+  SET[lv.column] = v; $("lv" + i).value = v; $("num" + i).value = v; $("badge" + i).textContent = fmt(v) + lv.unit;
+  clearTimeout(LIVE_T); LIVE_T = setTimeout(() => runScenario(true), 350);
+}
+function whenNow() {
+  const m = $("applyMode").value, f = $("applyWeek").value, t = $("applyWeekTo").value;
+  return m === "all" ? {mode: "all"} : m === "window" ? {mode: "window", from: f, to: t} : {mode: m, from: f};
+}
+function onWhen() {
+  const m = $("applyMode").value; $("applyWeek").disabled = m === "all"; $("applyWeek").classList.toggle("opacity-50", m === "all");
+  $("applyWeekTo").style.display = m === "window" ? "" : "none"; runScenario(true);
+}
+async function post(p, b) { const r = await fetch(p, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(b)});
+  const d = await r.json(); if (!r.ok) throw new Error(d.error || r.status); return d; }
+async function runScenario(live) {
+  try {
+    const r = await post(`/api/apps/${SLUG}/run`, {shift: SET, when: whenNow(), reps: live ? 100 : 400});
+    LAST = r; drawPreview(r); drawFlow(r);
+    if (!live) { LEDGER.unshift({shift: {...SET}, when: r.applies, kpis: r.kpis}); drawImpact(r); drawFlow(r); }
+  } catch (e) { $("pvTiles").innerHTML = `<p class="text-[11px] text-status-danger">${esc(e.message)}</p>`; }
+}
+function resetScenario() { SET = {}; ST.levers.forEach((lv, i) => syncL(i, 0)); }
+function applyPreset(shift) { SET = {...shift}; ST.levers.forEach((lv, i) => { const v = SET[lv.column] || 0; $("lv" + i).value = v; $("num" + i).value = v; $("badge" + i).textContent = fmt(v) + lv.unit; }); runScenario(false); }
+const kunit = k => k.unit === "%" ? "%" : "";
+function tile(k, base, scen) {     // CT's pvTile
+  const d = scen - base, good = k.better === "lower" ? d <= 0 : d >= 0, col = good ? "#16a34a" : "#dc2626",
+        ar = Math.abs(d) < 1e-9 ? "&#9632;" : d < 0 ? "&#9660;" : "&#9650;";
+  return `<div class="rounded-lg border border-ink-100 bg-ink-50/50 px-3 py-2" title="${esc(k.desc || "")}"><p class="text-ink-400 text-[9px] uppercase">${label(k.name)}</p>`
+    + `<p class="text-[17px] font-bold text-ink-900 leading-tight">${fmt(scen)}${kunit(k)}</p>`
+    + `<p class="text-[10px] leading-tight"><span class="text-ink-400">base ${fmt(base)}${kunit(k)}</span> <span style="color:${Math.abs(d) < 1e-9 ? "#64738c" : col}">${ar} ${d >= 0 ? "+" : "-"}${fmt(Math.abs(d))}${k.unit === "%" ? "pp" : ""}</span></p></div>`;
+}
+// CT's curves: baseline blue with a light fill, scenario red dashed
+const BASE_DS = (data, extra = {}) => ({label: "Baseline", data, borderColor: "#3366ff", backgroundColor: "rgba(51,102,255,.08)", fill: true, tension: .35, pointRadius: 0, borderWidth: 2, ...extra});
+const SCEN_DS = (data, extra = {}) => ({label: "Scenario", data, borderColor: "#dc2626", borderDash: [5, 3], borderWidth: 2, pointRadius: 0, tension: .35, fill: false, ...extra});
+function drawPreview(r) {
+  $("pvTiles").innerHTML = ST.kpis.map(k => tile(k, r.kpis[k.name].baseline, r.kpis[k.name].scenario)).join("");
+  ST.kpis.slice(0, 2).forEach((k, i) => chart(`ss${i}`, {type: "line", data: {labels: r.periods, datasets: [
+    BASE_DS(r.by_period[k.name].baseline), SCEN_DS(r.by_period[k.name].scenario)]},
+    options: {plugins: {legend: {display: false}}, scales: {x: {ticks: {font: {size: 7}, maxTicksLimit: 6}}, y: {ticks: {font: {size: 8}}}}}}));
+  const fl = Object.entries(r.flows || {});
+  chart("ssFlow", {type: "bar", data: {labels: fl.map(([f]) => label(f)), datasets: [{label: "Baseline", data: fl.map(([, v]) => v.baseline), backgroundColor: "#3366ff"},
+    {label: "Scenario", data: fl.map(([, v]) => v.scenario), backgroundColor: "#dc2626"}]}, options: {plugins: {legend: {display: false}}, scales: {x: {ticks: {font: {size: 7}}}, y: {ticks: {font: {size: 8}}}}}});
+  const chip = (t, tone, tip) => `<span title="${esc(tip || "")}" class="rounded-md border px-2 py-0.5 text-[11px] font-semibold ${{driver: "border-brand-300 bg-brand-50 text-brand-800", risk: "border-red-200 bg-red-50 text-red-800", pos: "border-emerald-200 bg-emerald-50 text-emerald-800", mech: "border-amber-200 bg-amber-50 text-amber-800"}[tone]}">${t}</span>`;
+  const moved = ST.behaviour.filter(b => SET[b.lever]);
+  $("behave").innerHTML = moved.length ? moved.map(b => {
+    const v = SET[b.lever], up = v > 0, k = ST.kpis.find(x => label(x.name) === label(b.path[b.path.length - 1])) || ST.kpis[0];
+    const res = r.kpis[k.name].delta, good = k.better === "lower" ? res <= 0 : res >= 0;
+    return `<div class="flex flex-wrap items-center gap-y-1">` + b.path.map((n, i) => chip(`${i === b.path.length - 1 ? (res >= 0 ? "&uarr;" : "&darr;") : (up ? "&uarr;" : "&darr;")} ${label(n)}`,
+      i === 0 ? "driver" : i === b.path.length - 1 ? (good ? "pos" : "risk") : "mech", i === 0 ? `${b.how} (source: ${b.source})` : "")).join(`<span class="mx-1 text-ink-300">&rarr;</span>`) + `</div>`;
+  }).join("") : `<p class="text-[11px] text-ink-400">No change yet — move a lever (or tap a preset) to see how the model responds.</p>`;
+}
+function interp(r) {             // the reading in plain words (rule-based, from the numbers above)
+  const ch = Object.entries(r.shift).filter(([, v]) => v), lv = c => (ST.levers.find(l => l.column === c) || {}).unit || "";
+  if (!ch.length) return "No lever is changed: the scenario equals the baseline.";
+  const what = ch.map(([c, v]) => `${label(c)} ${v > 0 ? "+" : ""}${fmt(v)} ${esc(lv(c))}`).join(", ");
+  const kp = ST.kpis.map(k => { const x = r.kpis[k.name]; return `${label(k.name)} moves from ${fmt(x.baseline)}${kunit(k)} to ${fmt(x.scenario)}${kunit(k)} (${x.delta >= 0 ? "+" : ""}${fmt(x.delta)}${k.unit === "%" ? "pp" : ""}, 95% interval ${fmt(x.ci95[0])} to ${fmt(x.ci95[1])})`; }).join("; ");
+  return `With ${what} ${r.applies.from ? `from ${r.applies.from}${r.applies.to && r.applies.to !== r.periods[r.periods.length - 1] ? " to " + r.applies.to : ""}` : ""}, ${kp}. Every figure comes from the simulation.`;
+}
+const th = t => `<th style="padding-right:10px" class="text-left py-1 text-[10px] font-semibold text-ink-500 border-b border-ink-200">${t}</th>`;
+const td = (t, c = "") => `<td style="padding-right:10px" class="py-1 text-[11px] border-b border-ink-100 ${c}">${t}</td>`;
+function drawImpact(r) {
+  $("ledger").innerHTML = `<div class="flex flex-wrap gap-1.5">${LEDGER.slice(0, 8).map((x, i) => `<span class="text-[10px] px-2 py-0.5 rounded-full border ${i ? "border-ink-200 text-ink-500" : "border-brand-300 text-brand-700 bg-brand-50"}">#${LEDGER.length - i} ${Object.entries(x.shift).filter(([, v]) => v).map(([c, v]) => `${label(c)} ${v > 0 ? "+" : ""}${fmt(v)}`).join(", ") || "baseline"}</span>`).join("")}</div>`;
+  $("impactHint").classList.add("hidden"); $("impactWrap").classList.remove("hidden");
+  const k0 = ST.kpis[0], x0 = r.kpis[k0.name], good0 = k0.better === "lower" ? x0.delta <= 0 : x0.delta >= 0;
+  const scope = r.applies.from && r.applies.from !== r.periods[0] ? `from ${r.applies.from}` : `${r.periods.length}-${ST.time_unit} total`;
+  $("interp").innerHTML = `<div class="border-l-4 ${good0 ? "border-l-emerald-500" : "border-l-red-500"} bg-white rounded-lg border border-ink-200 p-3"><p class="text-[10px] uppercase text-brand-600 font-semibold">Business interpretation &middot; ${esc(scope)}</p>`
+    + `<p class="text-[13px] font-medium text-ink-800 mt-1">${ST.kpis.map(k => { const x = r.kpis[k.name]; return `${label(k.name)} ${x.delta >= 0 ? "+" : ""}${fmt(x.delta)}${k.unit === "%" ? " pp" : ""}`; }).join(", ")} vs baseline.</p>`
+    + `<ul class="mt-1 grid sm:grid-cols-2 gap-x-6 gap-y-0.5 text-[11px] text-ink-600">${ST.kpis.map(k => { const x = r.kpis[k.name]; return `<li title="${esc(k.desc || "")}">${label(k.name)} ${fmt(x.scenario)}${kunit(k)} (base ${fmt(x.baseline)}${kunit(k)}; 95% ${fmt(x.ci95[0])} to ${fmt(x.ci95[1])}).</li>`; }).join("")}`
+    + Object.entries(r.flows).map(([f, v]) => `<li>${label(f)} ${fmt(v.scenario)} (base ${fmt(v.baseline)}).</li>`).join("") + `</ul>`
+    + `<p class="text-[11px] text-ink-600 mt-2">${interp(r)}</p></div>`;
+  $("cmpTable").innerHTML = `<table class="w-full"><tr>${th("KPI")}${th("Baseline")}${th("Scenario")}${th("Change")}${th("95% interval")}</tr>${ST.kpis.map(k => { const x = r.kpis[k.name];
+    return `<tr title="${esc(k.desc || "")}">${td(label(k.name))}${td(fmt(x.baseline) + kunit(k))}${td(fmt(x.scenario) + kunit(k), "font-semibold")}${td((x.delta >= 0 ? "+" : "") + fmt(x.delta), (k.better === "lower" ? x.delta <= 0 : x.delta >= 0) ? "text-status-ok" : "text-status-danger")}${td(fmt(x.ci95[0]) + " to " + fmt(x.ci95[1]))}</tr>`; }).join("")}</table>`;
+  $("route").innerHTML = `<p class="text-[10px] text-ink-400 mb-1">The traceable flow quantities over the horizon.</p><table class="w-full"><tr>${th("Flow")}${th("Baseline")}${th("Scenario")}${th("Change")}</tr>${Object.entries(r.flows).map(([f, v]) => `<tr>${td(label(f))}${td(fmt(v.baseline))}${td(fmt(v.scenario), "font-semibold")}${td((v.scenario - v.baseline >= 0 ? "+" : "") + fmt(v.scenario - v.baseline))}</tr>`).join("")}</table>`;
+  $("hzCards").innerHTML = ST.kpis.map(k => tile(k, r.kpis[k.name].baseline, r.kpis[k.name].scenario)).join("");
+  ST.kpis.slice(0, 2).forEach((k, i) => chart(`hz${i}`, {type: "line", data: {labels: r.periods, datasets: [
+    BASE_DS(r.by_period[k.name].baseline, {pointRadius: 2}), SCEN_DS(r.by_period[k.name].scenario, {pointRadius: 2})]}, options: {scales: axis(ST.time_unit, label(k.name))}}));
+}
+const FIC = {tool: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.3 2.3-2-2z"/>',
+  demand: '<circle cx="9" cy="7" r="3"/><path d="M2 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2"/>', route: '<circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><path d="M6 8v8"/><path d="M18 12H8"/><path d="M14 8l4 4-4 4"/>',
+  grade: '<path d="M20 6L9 17l-5-5"/>', box: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/>', flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>'};
+const FBG = {sup: "#eef4ff", grd: "#f6f7f9", int: "#d1fae5", obj: "#dbeafe"}, FBD = {sup: "#1f47f5", grd: "#64738c", int: "#047857", obj: "#1d4ed8"};
+function flowLayout() {            // columns by depth from the decisions; rows within a column
+  const G = ST.graph, depth = {}, ins = {};
+  G.edges.forEach(([a, b]) => (ins[b] = ins[b] || []).push(a));
+  const d = id => depth[id] ?? (depth[id] = (ins[id] || []).length ? 1 + Math.max(...ins[id].map(x => x === id ? 0 : d(x))) : 0);
+  G.nodes.forEach(n => { depth[n.id] = n.kind === "lever" ? 0 : undefined; });
+  G.nodes.forEach(n => d(n.id));
+  const last = Math.max(1, ...G.nodes.filter(n => n.kind !== "kpi").map(n => depth[n.id])) + 1;
+  G.nodes.forEach(n => { if (n.kind === "kpi") depth[n.id] = last; });
+  const cols = {}, pos = {};
+  G.nodes.forEach(n => (cols[depth[n.id]] = cols[depth[n.id]] || []).push(n));
+  Object.entries(cols).forEach(([c, ns]) => ns.forEach((n, j) => { pos[n.id] = {x: 8 + c * 200, y: 6 + j * 66, w: n.kind === "kpi" ? 172 : 156, h: 54}; }));
+  return {pos, width: 8 + (last + 1) * 200, height: 12 + 66 * Math.max(...Object.values(cols).map(x => x.length))};
+}
+const edgePath = (a, b) => { const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2, mx = Math.round((x1 + x2) / 2); return `M${x1},${y1} H${mx} V${y2} H${x2}`; };
+function drawFlow(r) {
+  r = r || LAST;
+  const {pos, width, height} = flowLayout(), G = ST.graph;
+  const boxes = G.nodes.map(n => {
+    const P = pos[n.id];
+    if (n.kind === "kpi") {
+      const k = ST.kpis.find(x => x.name === n.ref) || {}, x = r && r.kpis[n.ref], dd = x ? x.delta : 0, good = k.better === "lower" ? dd <= 0 : dd >= 0;
+      return `<div onmouseenter="flowHover('${n.id}',event)" onmouseleave="flowLeave()" style="position:absolute;left:${P.x}px;top:${P.y}px;width:${P.w}px;height:${P.h}px;background:#dbeafe;border:1px solid #1d4ed8;border-radius:8px;padding:6px 9px">`
+        + `<div style="font-size:9.5px;color:#1e3a8a;font-weight:700;text-transform:uppercase;letter-spacing:.02em">${label(n.label)}</div>`
+        + `<div style="font-size:15px;font-weight:700;color:#1c2e8f;line-height:1.1">${x ? `${fmt(x.baseline)} &rarr; ${fmt(x.scenario)}` : ""}${kunit(k)}</div>`
+        + (x && Math.abs(dd) > 1e-9 ? `<div style="font-size:10px;color:${good ? "#16a34a" : "#dc2626"}">${dd < 0 ? "&#9660;" : "&#9650;"} ${fmt(Math.abs(dd))} vs baseline</div>` : `<div style="font-size:10px;color:#64748b">baseline &middot; run to compare</div>`) + `</div>`;
+    }
+    const cls = n.kind === "lever" ? "sup" : n.kind === "arrivals" ? "sup" : ["stock", "inventory", "queue"].includes(n.kind) ? "grd" : "int";
+    const ic = n.kind === "lever" ? "tool" : n.kind === "arrivals" ? "demand" : ["stock", "inventory", "queue"].includes(n.kind) ? "box" : "route";
+    const fv = r && r.flows[n.ref], lv = n.kind === "lever" ? ((r || {shift: {}}).shift[n.ref] || 0) : 0;
+    const dl = fv ? fv.scenario - fv.baseline : lv, imp = Math.abs(dl) > 1e-9;
+    const val = fv ? fmt(fv.scenario) : n.kind === "lever" ? (lv ? `${lv > 0 ? "+" : ""}${fmt(lv)}` : "plan") : "";
+    const badge = imp ? `<span style="position:absolute;right:6px;top:3px;font-size:9px;font-weight:700;color:#b45309">${dl > 0 ? "&#9650;" : "&#9660;"}${fmt(Math.abs(dl))}</span>` : "";
+    return `<div onmouseenter="flowHover('${n.id}',event)" onmouseleave="flowLeave()" style="position:absolute;left:${P.x}px;top:${P.y}px;width:${P.w}px;height:${P.h}px;background:${imp ? "#fef3c7" : FBG[cls]};border:${imp ? 2 : 1}px solid ${imp ? "#b45309" : FBD[cls]};border-radius:8px;padding:5px 8px;font-size:11px;overflow:hidden">`
+      + `<div style="display:flex;align-items:center;gap:4px;padding-right:36px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${FBD[cls]}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none">${FIC[ic]}</svg><span style="font-weight:600;color:#1e293b;line-height:1.05">${label(n.label)}</span></div>`
+      + `<div style="font-size:9px;color:#64748b;margin-left:16px">${esc(n.kind === "lever" ? "decision" : n.kind)}</div>${badge}`
+      + (val ? `<div style="position:absolute;right:8px;bottom:4px;font-weight:700;color:${FBD[cls]}">${val}</div>` : "") + `</div>`;
+  }).join("");
+  const paths = G.edges.map(([a, b]) => `<path d="${edgePath(pos[a], pos[b])}" fill="none" stroke="${(G.nodes.find(n => n.id === b) || {}).kind === "kpi" ? "#598eff" : "#94a3b8"}" stroke-width="1.4" marker-end="url(#ah)"/>`).join("");
+  $("flow").style.cssText = `min-width:${width}px;height:${height}px`;
+  $("flow").innerHTML = `<svg width="${width}" height="${height}" style="position:absolute;left:0;top:0;pointer-events:none"><defs><marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M1 1L7 4L1 7" fill="none" stroke="#94a3b8" stroke-width="1.3"/></marker></defs>${paths}</svg>${boxes}`;
+  const fl = Object.entries((r || {}).flows || {});
+  $("flowRecon").innerHTML = fl.length ? fl.map(([f, v]) => `${label(f)} <b>${fmt(v.scenario)}</b> (base ${fmt(v.baseline)})`).join(" &middot; ") : "";
+}
+function flowHover(id, ev) {
+  const n = ST.graph.nodes.find(x => x.id === id), tip = $("flowTip"); if (!n || !tip) return;
+  tip.innerHTML = `<div style="font-weight:600;font-size:12px;color:#1c2e8f">${label(n.label)}</div><div style="font-size:11px;color:#475569;margin-top:3px">${esc(n.desc)}</div>`;
+  tip.style.left = (ev.clientX + 14) + "px"; tip.style.top = (ev.clientY + 14) + "px"; tip.classList.remove("hidden");
+}
+function flowLeave() { const t = $("flowTip"); if (t) t.classList.add("hidden"); }
+function dpCard(d) {
+  const k0 = ST.kpis[0], now = LAST ? LAST.kpis[k0.name].scenario : null;
+  const acts = WB.actions.filter(a => a.decision_point === d.id);
+  return `<div class="grid grid-cols-2 gap-4"><div class="rounded-lg border border-ink-200 bg-white p-3"><p class="text-[10px] uppercase tracking-wide text-ink-400 mb-1">Reference card</p>`
+    + `<p class="text-[13px] font-semibold text-ink-800 mb-1">${esc(d.name)}</p><p class="text-[11px] text-ink-600"><b>Stage:</b> ${esc(d.stage)}</p><p class="text-[11px] text-ink-600"><b>KPI:</b> ${esc(d.kpi)}</p>`
+    + `<p class="text-[11px] text-ink-600"><b>Inputs:</b> ${(d.inputs || []).map(label).join(", ")}</p><p class="text-[11px] text-ink-600 mt-1"><b>Rule:</b> ${esc(d.rule)}</p></div>`
+    + `<div class="rounded-lg border border-brand-200 bg-brand-50/60 p-3"><p class="text-[10px] uppercase tracking-wide text-ink-400 mb-1">Plan</p><p class="text-[12px] text-ink-800 mb-1">${esc(d.plan.obj)}</p>`
+    + `<ol style="list-style:decimal" class="pl-4 text-[11px] text-ink-700">${(d.plan.steps || []).map(x => `<li>${esc(x)}</li>`).join("")}</ol><p class="text-[11px] text-ink-600 mt-1">${esc(d.plan.exp)}${now !== null ? ` Now ${label(k0.name)} ${fmt(now)}${kunit(k0)}.` : ""}</p>`
+    + `<div class="flex flex-wrap gap-1.5 mt-2">${acts.map(a => `<button onclick="applyAction('${esc(a.id)}')" class="text-[10px] px-2 py-1 rounded-md border border-ink-200 bg-white hover:border-brand-300 text-ink-600">${esc(a.name)}</button>`).join("")}</div></div></div>`;
+}
+function selectDP(id) { WB.decision_points.forEach(d => { const c = $("dpc" + d.id); if (c) c.className = c.className.replace(/border-brand-500 text-brand-700/, "border-ink-200 text-ink-600").replace(d.id === id ? /border-ink-200 text-ink-600/ : /$^/, "border-brand-500 text-brand-700"); });
+  $("dpDetail").innerHTML = dpCard(WB.decision_points.find(d => d.id === id)); }
+function applyAction(id) { const a = WB.actions.find(x => x.id === id); if (!a) return; applyPreset({...SET, [a.lever]: +a.change}); }
+async function uploadWB(f) { if (!f) return; const r = await fetch(`/api/apps/${SLUG}/workbook`, {method: "POST", headers: {"X-Filename": f.name}, body: f});
+  const d = await r.json(); if (!r.ok) { alert(d.error); return; } WB = d; drawPlan(); }
+function drawPlan() {
+  $("dpChips").innerHTML = WB.decision_points.map(d => `<button title="${esc(d.rule)}" id="dpc${esc(d.id)}" onclick="selectDP('${esc(d.id)}')" class="inline-flex items-center gap-1.5 rounded-full border border-ink-200 bg-white px-3 py-1.5 text-[11px] font-medium text-ink-600 hover:border-brand-300"><span class="h-1.5 w-1.5 rounded-full bg-ink-300"></span>${esc(d.name)}</button>`).join("");
+  $("rec").innerHTML = WB.actions.map(a => `<div class="flex items-center gap-2 py-1 border-b border-ink-100"><span class="text-[11px] text-ink-700 flex-1">${esc(a.name)}</span><span class="text-[10px] text-ink-400">${esc(a.note || "")}</span><button onclick="applyAction('${esc(a.id)}')" class="text-[11px] px-2 py-1 rounded border border-ink-200 text-ink-600 hover:border-brand-300">Apply in the studio</button></div>`).join("");
+  $("wbSrc").textContent = WB.source;
+}
+let CMP = [];
+function buildCmp() {
+  const n = +$("cmpN").value; while (CMP.length < n) CMP.push({}); CMP = CMP.slice(0, n);
+  $("cmpCards").innerHTML = CMP.map((sc, j) => `<div class="rounded-lg border border-ink-200 bg-white p-3"><p class="text-[11px] font-semibold text-ink-700 mb-1">Scenario ${j + 1}</p>`
+    + ST.levers.map((lv, i) => `<div class="flex items-center gap-2 py-0.5"><span class="text-[10.5px] text-ink-600 flex-1">${label(lv.label)}</span><input type="number" value="${sc[lv.column] || 0}" min="${lv.lo}" max="${lv.hi}" step="${lv.step}" onchange="CMP[${j}]['${lv.column}']=+this.value" class="w-16 border border-ink-300 rounded px-1 py-0.5 text-[11px] text-right"><span class="text-[10px] text-ink-400 w-6">${esc(lv.unit)}</span></div>`).join("") + `</div>`).join("");
+}
+function loadCurrentIntoCmp() { CMP[0] = {...SET}; buildCmp(); }
+async function runCompare() {
+  $("cmpRun").disabled = true;
+  try {
+    const rs = await Promise.all(CMP.map(sc => post(`/api/apps/${SLUG}/run`, {shift: sc, when: whenNow(), reps: 300})));
+    $("cmpOut").innerHTML = `<table class="w-full"><tr>${th("KPI")}${th("Baseline")}${rs.map((_, j) => th("Scenario " + (j + 1))).join("")}</tr>${ST.kpis.map(k => `<tr>${td(label(k.name))}${td(fmt(rs[0].kpis[k.name].baseline) + kunit(k))}`
+      + rs.map(r => td(`${fmt(r.kpis[k.name].scenario)}${kunit(k)} <span class="text-[9px] text-ink-400">(${r.kpis[k.name].delta >= 0 ? "+" : ""}${fmt(r.kpis[k.name].delta)})</span>`)).join("") + `</tr>`).join("")}</table>`
+      + `<div style="height:170px" class="mt-3"><canvas id="cmpChart"></canvas></div>`;
+    const k = ST.kpis[0];
+    chart("cmpChart", {type: "line", data: {labels: rs[0].periods, datasets: [{label: "Baseline", data: rs[0].by_period[k.name].baseline, borderColor: "#94a3b8", borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0}]
+      .concat(rs.map((r, j) => ({label: "Scenario " + (j + 1), data: r.by_period[k.name].scenario, borderColor: PAL[j % PAL.length], borderWidth: 2, pointRadius: 0})))}, options: {scales: axis(ST.time_unit, label(k.name))}});
+  } catch (e) { $("cmpOut").innerHTML = `<p class="text-[11px] text-status-danger">${esc(e.message)}</p>`; }
+  $("cmpRun").disabled = false;
+}
+function studioView() {
+  const per = ST.periods.map(p => `<option value="${p}">${p}</option>`).join("");
+  const presets = ST.presets.map((p, i) => `<button onclick="applyPreset(ST.presets[${i}].shift)" class="text-[10px] px-2 py-1 rounded-md border border-ink-200 bg-white hover:border-brand-300 text-ink-600">${esc(p.label)}</button>`).join("");
+  const top = `<div class="bg-white rounded-xl border border-ink-200 p-4 mb-3"><div class="flex flex-wrap items-center gap-2 mb-3"><span class="text-[10px] text-ink-400 mr-1">Presets:</span>${presets}`
+    + `<div class="ml-auto flex items-center gap-2"><label class="text-[10px] text-ink-500">When change applies</label>`
+    + `<select id="applyMode" onchange="onWhen()" class="border border-ink-300 rounded px-2 py-1 text-[11px] bg-white"><option value="all">All ${esc(ST.time_unit)}s (sustained)</option><option value="from">From ${esc(ST.time_unit)}&hellip;</option><option value="just">Just ${esc(ST.time_unit)}&hellip;</option><option value="window">Between ${esc(ST.time_unit)}s&hellip;</option></select>`
+    + `<select id="applyWeek" onchange="onWhen()" disabled class="border border-ink-300 rounded px-2 py-1 text-[11px] bg-white opacity-50">${per}</select>`
+    + `<select id="applyWeekTo" onchange="onWhen()" class="border border-ink-300 rounded px-2 py-1 text-[11px] bg-white" style="display:none">${per}</select>`
+    + `<button id="runBtn" onclick="runScenario(false)" class="bg-brand-600 text-white px-4 py-1.5 rounded-md text-[13px] font-medium">&#9654; Run Scenario</button>`
+    + `<button onclick="resetScenario()" class="text-ink-500 text-[12px] px-3 py-1.5 rounded-md border border-ink-200">Reset</button></div></div>`
+    + `<div class="grid grid-cols-5 gap-5"><div class="col-span-2"><h4 class="text-[11px] font-semibold text-ink-700 uppercase tracking-wide mb-1">Levers</h4>${ST.levers.map(leverRow).join("")}`
+    + `<p class="text-[10px] text-ink-400 mt-2">Use <b>When change applies</b> (top-right) to apply the change from a ${esc(ST.time_unit)} and watch it ripple forward. A change applies to every ${esc(BLG())}.</p>`
+    + `<div class="mt-3"><p class="text-[11px] font-semibold text-ink-700 uppercase tracking-wide mb-1">How this scenario behaves</p><div id="behave" class="space-y-1.5"></div></div></div>`
+    + `<div class="col-span-3 border-l border-ink-100 pl-5"><div class="flex items-center gap-2 mb-2"><h4 class="text-[11px] font-semibold text-ink-700 uppercase tracking-wide">Affected KPI preview</h4>`
+    + `<span class="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full">live</span></div><div id="pvTiles" class="grid grid-cols-5 gap-2 mb-1"></div>`
+    + `<p class="text-[9px] text-ink-400 mb-3">Values are the ${ST.periods.length}-${esc(ST.time_unit)} horizon from the simulation (a quick run while you move a lever; Run Scenario for the full run).</p>`
+    + `<div class="grid grid-cols-3 gap-2">${ST.kpis.slice(0, 2).map((k, i) => `<div><p class="text-[9px] text-ink-500 font-medium mb-0.5">${label(k.name)}</p><div style="height:100px"><canvas id="ss${i}"></canvas></div></div>`).join("")}`
+    + `<div><p class="text-[9px] text-ink-500 font-medium mb-0.5">Flows (horizon total)</p><div style="height:100px"><canvas id="ssFlow"></canvas></div></div></div></div></div></div>`;
+  const impact = `<div id="ledger" class="mb-3"></div><div id="impactHint" class="text-[12px] text-ink-400 border-t border-ink-100 pt-3">&#9654; Run a scenario to see the before &rarr; after impact, the flows and the horizon charts.</div>`
+    + `<div id="impactWrap" class="hidden border-t border-ink-100 pt-3"><div id="interp" class="mb-3"></div><div class="grid grid-cols-5 gap-4">`
+    + `<div class="col-span-3"><h4 class="text-[12px] font-semibold text-ink-700 mb-1">Baseline vs Scenario</h4><div id="cmpTable"></div></div>`
+    + `<div class="col-span-2"><h4 class="text-[12px] font-semibold text-ink-700 mb-1">Flows</h4><div id="route"></div></div></div>`
+    + `<div class="mt-4"><h4 class="text-[12px] font-semibold text-ink-700 mb-1">Impact Across the Horizon</h4><div id="hzCards" class="grid grid-cols-5 gap-2 mb-1"></div>`
+    + `<div class="grid grid-cols-2 gap-4">${ST.kpis.slice(0, 2).map((k, i) => `<div><p class="text-[10px] text-ink-500 font-medium">${label(k.name)} by ${esc(ST.time_unit)}</p><div style="height:150px"><canvas id="hz${i}"></canvas></div></div>`).join("")}</div></div></div>`;
+  const flow = `<p class="text-[10px] text-ink-400 mb-2"><b>Left:</b> the decisions you change &middot; <b>Middle:</b> how the business process flows (horizon totals, live for this scenario) &middot; <b>Right:</b> the KPIs those flows produce (before &rarr; after) &middot; hover any box for detail.</p>`
+    + `<div class="overflow-auto" style="max-height:330px"><div id="flow" class="relative"></div></div><div id="flowRecon" class="text-[10.5px] text-ink-500 mt-2"></div>`
+    + `<div id="flowTip" class="hidden fixed z-50 rounded-xl border border-ink-200 bg-white p-3 shadow-xl" style="width:250px;pointer-events:none"></div>`
+    + `<p class="text-[9.5px] text-ink-400 mt-1"><span style="color:#1f47f5">&#9632;</span> decision / arrivals <span style="color:#047857">&#9632;</span> process flow <span style="color:#64738c">&#9632;</span> stock <span style="color:#b45309">&#9632;</span> changed by the scenario &middot; blue arrows &rarr; the KPI outcomes</p>`;
+  const plan = `<p class="text-[11px] text-ink-500 mb-3">Pick a decision point — you get its reference card and a concrete, scenario-aware plan. They come from this model's scenario workbook (<span id="wbSrc"></span>): `
+    + `<a href="/api/apps/${SLUG}/workbook.xlsx" class="text-brand-700 hover:underline">download</a>, edit, then <label class="text-brand-700 hover:underline cursor-pointer">upload<input type="file" accept=".xlsx" class="hidden" onchange="uploadWB(this.files[0])"></label>.</p>`
+    + `<div id="dpChips" class="flex flex-wrap gap-2"></div><div id="dpDetail" class="mt-4"><div class="rounded-lg border border-dashed border-ink-200 bg-ink-50/40 px-4 py-6 text-center text-[12px] text-ink-400">Select a decision point to see its plan.</div></div>`
+    + `<div class="border-t border-ink-100 mt-4 pt-3"><h4 class="text-[12px] font-semibold text-ink-700 mb-2">Recommended Planning Actions</h4><div id="rec"></div></div>`;
+  const compare = `<div class="flex flex-wrap items-center gap-2 mb-3"><label class="text-[11px] text-ink-600">Compare</label><select id="cmpN" onchange="buildCmp()" class="border border-ink-300 rounded px-2 py-1 text-[12px] bg-white"><option value="2">2</option><option value="3">3</option><option value="4">4</option></select>`
+    + `<label class="text-[11px] text-ink-600">scenarios vs baseline</label><button onclick="loadCurrentIntoCmp()" class="text-[11px] px-2 py-1 rounded border border-ink-200 text-ink-600 hover:border-brand-300">Use current levers as Scenario 1</button>`
+    + `<button id="cmpRun" onclick="runCompare()" class="ml-auto bg-brand-600 text-white px-4 py-1.5 rounded-md text-[12px] font-medium">Run comparison</button></div><div id="cmpCards" class="grid grid-cols-2 gap-3"></div><div id="cmpOut" class="mt-4"></div>`;
+  return top + section("impact", "Scenario Impact", impact, "stateful ledger + before/after")
+    + `<div class="relative">${section("flow", "Flow Response", flow, "levers → flows → KPIs")}</div>`
+    + section("plan", "Where to Intervene &mdash; Decision Points &amp; Plans", plan, `${WB.decision_points.length} points`)
+    + section("compare", "Compare Scenarios", compare, "side by side");
+}
+async function drawStudio() {
+  ST = await api(`/api/apps/${SLUG}/studio`); WB = await api(`/api/apps/${SLUG}/workbook`);
+  ST.group_column = (UC.procspec && UC.procspec.groups && UC.procspec.groups.column) || "group";
+  $("content").innerHTML = studioView(); drawPlan(); buildCmp(); drawFlow(null); runScenario(true);
+}
+
+// ---------- Optimize & ROI (CT's Optimizer and ROI Analysis) ----------
+let OPT = null;
+const STARTS = [["Baseline (no stress)", 0], ["Volume +10%", 10], ["Volume +20%", 20], ["Volume −10%", -10]];
+const money = v => (v < 0 ? "-$" : "$") + Math.round(Math.abs(v)).toLocaleString();
+function optimizeView() {
+  const sopts = STARTS.map(([l, v]) => `<option value="${v}">${l}</option>`).join("");
+  const gopts = ST.kpis.map(k => `<option value="target|${k.name}">Reach ${label(k.name)} ${k.better === "lower" ? "&le;" : "&ge;"} target (least change)</option>`
+    + `<option value="best|${k.name}">${k.better === "lower" ? "Minimize" : "Maximize"} ${label(k.name)} (all-out)</option>`).join("");
+  const opt = `<p class="text-[11px] text-ink-400 mb-3">Pick a scenario and a goal; the engine searches the controllable levers (${ST.levers.map(l => label(l.label)).join(", ")}) and recommends the best setting &mdash; every candidate is run through the real simulator. The ROI of the recommended move is in ROI Analysis below.</p>`
+    + `<div class="flex flex-wrap items-end gap-4"><div><label class="text-[10px] text-ink-500 block mb-1">Scenario to optimize</label><select id="optStart" class="border border-ink-300 rounded px-3 py-1.5 text-[13px] bg-white w-52">${sopts}</select></div>`
+    + `<div><label class="text-[10px] text-ink-500 block mb-1">Goal</label><select id="optGoal" onchange="optGoalChange()" class="border border-ink-300 rounded px-3 py-1.5 text-[13px] bg-white">${gopts}</select></div>`
+    + `<div id="optTargetWrap"><label class="text-[10px] text-ink-500 block mb-1">Target</label><input id="optTarget" type="number" step="any" class="w-20 border border-ink-300 rounded px-2 py-1.5 text-[13px]"></div>`
+    + `<div><label class="text-[10px] text-ink-500 block mb-1">Intervention cost $ (assumed)</label><input id="optIntv" type="number" value="0" step="1000" class="w-32 border border-ink-300 rounded px-2 py-1.5 text-[13px]"></div>`
+    + `<button id="optRun" onclick="runOptimize()" class="ml-auto bg-brand-600 text-white px-4 py-2 rounded-md text-[13px] font-medium">&#9654; Optimize</button></div>`
+    + `<div id="optResult" class="mt-4 mb-3"></div><div id="optNarr" class="mb-3"></div><div id="optROI"></div>`;
+  const mits = `<option value="opt">Optimizer's recommendation (run it above)</option>` + WB.actions.map((a, i) => `<option value="a${i}">${esc(a.name)}</option>`).join("");
+  const roi = `<p class="text-[11px] text-ink-400 mb-3">Quantify the value of a mitigation applied to the <b>same starting scenario</b>: the KPI change times your value per KPI unit, versus the lever change times your cost per lever unit per ${esc(ST.time_unit)} plus a fixed intervention cost. Quantities are engine-computed; the prices are your assumptions.</p>`
+    + `<div class="flex flex-wrap items-end gap-4"><div><label class="text-[10px] text-ink-500 block mb-1 uppercase tracking-wide">From (problem)</label><select id="roiFrom" onchange="runROI()" class="border border-ink-300 rounded px-3 py-1.5 text-[13px] bg-white w-52">${sopts}</select></div>`
+    + `<div class="pb-1.5 text-ink-300 text-lg">&rarr;</div><div><label class="text-[10px] text-ink-500 block mb-1 uppercase tracking-wide">To (mitigation)</label><select id="roiTo" onchange="runROI()" class="border border-ink-300 rounded px-3 py-1.5 text-[13px] bg-white w-64">${mits}</select></div>`
+    + ST.kpis.map((k, i) => `<div title="${esc(k.desc || "")}"><label class="text-[10px] text-ink-500 block mb-1 uppercase tracking-wide">Value per ${k.unit === "%" ? "pp" : "unit"} of ${label(k.name)} ($)</label><input id="roiV${i}" type="number" value="10000" min="0" step="1000" onchange="runROI()" class="w-28 border border-ink-300 rounded px-2 py-1.5 text-[13px]"></div>`).join("")
+    + ST.levers.map((lv, i) => `<div title="${esc(lv.desc)}"><label class="text-[10px] text-ink-500 block mb-1 uppercase tracking-wide">Cost per ${esc(lv.unit)} of ${label(lv.label)} per ${esc(ST.time_unit)} ($)</label><input id="roiC${i}" type="number" value="0" min="0" step="10" onchange="runROI()" class="w-28 border border-ink-300 rounded px-2 py-1.5 text-[13px]"></div>`).join("")
+    + `<div><label class="text-[10px] text-ink-500 block mb-1 uppercase tracking-wide">Intervention cost ($)</label><input id="roiIntv" type="number" value="0" min="0" step="1000" onchange="runROI()" class="w-32 border border-ink-300 rounded px-2 py-1.5 text-[13px]"></div></div>`
+    + `<div id="roiMove" class="mt-4"></div><div id="roiHead" class="mt-3"></div><div id="roiBuys" class="mt-3"></div>`;
+  return section("opt", "Optimizer &mdash; best action for a scenario", opt, "sim search", true)
+    + section("roi", "ROI Analysis &mdash; value of a mitigation vs its cost", roi, "value vs cost", false);
+}
+function optGoalChange() {
+  const [kind, kn] = $("optGoal").value.split("|"), k = ST.kpis.find(x => x.name === kn);
+  $("optTargetWrap").style.display = kind === "target" ? "" : "none";
+  if (kind === "target" && !$("optTarget").value && BL0) { const v = BL0[kn]; $("optTarget").value = (v + (k.better === "lower" ? -1 : 1) * Math.max(Math.abs(v) * 0.03, 1)).toFixed(1); }
+}
+let BL0 = null;
+async function runOptimize() {
+  const b = $("optRun"), [kind, kn] = $("optGoal").value.split("|"), k = ST.kpis.find(x => x.name === kn);
+  b.disabled = true; b.innerHTML = "Optimizing&hellip;";
+  const steps = ST.levers.map(l => `Trying ${label(l.label)} settings…`).concat(["Refining the best combination found so far…"]);
+  let si = 0; $("optResult").innerHTML = `<p class="text-[12px] text-ink-500" id="optProg">${steps[0]}</p>`;
+  const timer = setInterval(() => { si = (si + 1) % steps.length; const pp = $("optProg"); if (pp) pp.textContent = steps[si]; }, 1500);
+  try {
+    OPT = await post(`/api/apps/${SLUG}/optimize`, {start: {volume: +$("optStart").value}, goal: {kind, kpi: kn, target: +$("optTarget").value}});
+    renderOpt(OPT, k);
+  } catch (e) { $("optResult").innerHTML = `<p class="text-[12px] text-status-danger">${esc(e.message)}</p>`; }
+  clearInterval(timer); b.innerHTML = "&#9654; Optimize"; b.disabled = false;
+}
+function renderOpt(d, k) {
+  const s0 = d.start.kpis[k.name], s1 = d.best.kpis[k.name], dd = s1 - s0, acc = d.met ? "border-l-emerald-500" : "border-l-amber-500";
+  const head = d.goal.kind === "target" ? (d.met ? "Target reachable" : "Target not reachable with these levers") : "Best action";
+  const recs = Object.entries(d.best.shift).map(([c, v]) => `${label(c)} &rarr; ${v >= 0 ? "+" : ""}${fmt(v)} ${esc((ST.levers.find(l => l.column === c) || {}).unit || "")}`);
+  let h = `<div class="bg-white rounded-xl border border-ink-200 border-l-4 ${acc} p-4"><div class="text-[10px] uppercase text-brand-600 font-semibold">${head}</div>`
+    + `<div class="text-[15px] font-semibold text-ink-900 mt-1">${label(k.name)} ${fmt(s0)}${kunit(k)} &rarr; <b>${fmt(s1)}${kunit(k)}</b> (${dd >= 0 ? "+" : ""}${fmt(dd)}${k.unit === "%" ? "pp" : ""})</div>`
+    + `<div class="text-[12px] text-ink-600 mt-1">${recs.length ? "Recommended: " + recs.join(" &middot; ") : "No lever change needed &mdash; the scenario already meets the goal."}</div></div>`;
+  let t = `<div class="border border-ink-100 rounded-lg p-3"><h4 class="text-[12px] font-semibold text-ink-700 mb-1">Before &rarr; after</h4><table class="w-full text-[11px]">`;
+  ST.kpis.forEach(x => { const a = d.start.kpis[x.name], b2 = d.best.kpis[x.name], q = b2 - a, good = x.better === "lower" ? q <= 0 : q >= 0, col = Math.abs(q) < 1e-9 ? "#64748b" : good ? "#16a34a" : "#dc2626";
+    t += `<tr class="border-b border-ink-50" title="${esc(x.desc || "")}"><td class="py-1 text-ink-700">${label(x.name)}</td><td class="text-right text-ink-500">${fmt(a)}${kunit(x)}</td><td class="text-right text-ink-300">&rarr;</td><td class="text-right font-medium" style="color:${col}">${fmt(b2)}${kunit(x)}</td></tr>`; });
+  t += `</table></div>`;
+  $("optResult").innerHTML = h + `<div class="grid grid-cols-2 gap-4 mt-3">${t}<div class="border border-ink-100 rounded-lg p-3"><h4 class="text-[12px] font-semibold text-ink-700 mb-1">${label(k.name)} by ${esc(ST.time_unit)}</h4><div style="height:140px"><canvas id="optChart"></canvas></div></div></div>`;
+  chart("optChart", {type: "line", data: {labels: d.by_period.periods, datasets: [BASE_DS(d.by_period.start, {label: "Scenario (start)"}), SCEN_DS(d.by_period.best, {label: "With the recommended move"})]}, options: {scales: axis(ST.time_unit, label(k.name))}});
+  const plain = `${recs.length ? `Change ${recs.join(" and ").replace(/&rarr;/g, "by")} for every ${BLG()}, from the first ${ST.time_unit} of the horizon and for all of it. ` : ""}${label(k.name)} then ${d.goal.kind === "target" ? (d.met ? `reaches the target of ${fmt(d.goal.target)}${kunit(k)}` : `stays short of the target of ${fmt(d.goal.target)}${kunit(k)}`) : "reaches its best value within the levers' limits"}: ${fmt(s1)}${kunit(k)} against ${fmt(s0)}${kunit(k)} without the move.`.replace(/<[^>]+>/g, "");
+  askNarration("optNarr", "optimizer", {goal: d.goal, met: d.met, kpi: label(k.name), unit: k.unit, start: s0, with_move: s1, changes_from_plan: Object.entries(d.best.shift).map(([c, v]) => `${label(c).replace(/&[a-z]+;/g, "")} ${v >= 0 ? "+" : ""}${fmt(v)} ${(ST.levers.find(l => l.column === c) || {}).unit || ""} (a change from today's plan, for every ${BLG()})`),
+                                       horizon: `${ST.periods.length} ${ST.time_unit}s`},
+               plain, {heading: "What the plan asks of you"});
+  const intv = +$("optIntv").value || 0;
+  $("optROI").innerHTML = `<h4 class="text-[12px] font-semibold text-ink-700 mb-1">What the move buys you</h4><div class="grid grid-cols-4 gap-2 mb-3">${ST.kpis.map(x => { const a = d.start.kpis[x.name], b2 = d.best.kpis[x.name], q = b2 - a, good = x.better === "lower" ? q <= 0 : q >= 0, col = Math.abs(q) < 1e-9 ? "#64748b" : good ? "#16a34a" : "#dc2626";
+    return `<div class="rounded-lg border border-ink-100 bg-ink-50/50 p-2"><p class="text-ink-400 text-[9px] uppercase">${label(x.name)}</p><p class="text-[13px] font-bold text-ink-900">${fmt(a)} &rarr; ${fmt(b2)}</p><p class="text-[10px]" style="color:${col}">${q >= 0 ? "+" : ""}${fmt(q)} vs scenario</p></div>`; }).join("")}</div>`
+    + `<p class="text-[11px] text-ink-500">${intv ? `At an assumed intervention of ${money(intv)}. ` : ""}Price the move in <b>ROI Analysis</b> below (To: Optimizer's recommendation).</p>`;
+  if ($("roiTo").value === "opt") runROI();
+}
+async function runROI() {
+  const to = $("roiTo").value, a = to === "opt" ? (OPT ? {shift: OPT.best.shift} : null) : (() => { const x = WB.actions[+to.slice(1)]; return {shift: {[x.lever]: +x.change}}; })();
+  if (!a) { $("roiMove").innerHTML = `<p class="text-[12px] text-ink-400">Run the Optimizer above, or pick a planning action as the mitigation.</p>`; return; }
+  const vpu = Object.fromEntries(ST.kpis.map((k, i) => [k.name, +$("roiV" + i).value || 0])), cpu = Object.fromEntries(ST.levers.map((lv, i) => [lv.column, +$("roiC" + i).value || 0]));
+  try {
+    const r = await post(`/api/apps/${SLUG}/roi`, {from: {volume: +$("roiFrom").value, shift: {}}, to: a, value_per_unit: vpu, cost_per_unit: cpu, fixed: +$("roiIntv").value || 0});
+    const tone = r.net >= 0 ? "#16a34a" : "#dc2626", N = r.periods, u = r.time_unit;
+    $("roiMove").innerHTML = `<p class="text-[12px] text-ink-700"><b>The move:</b> ${Object.entries(r.moves).filter(([, v]) => v).map(([c, v]) => `${label(c)} ${v >= 0 ? "+" : ""}${fmt(v)} ${esc((ST.levers.find(l => l.column === c) || {}).unit || "")}`).join(" &middot; ") || "no change"} on the same starting scenario.</p>`;
+    const pb = r.payback === null ? (r.cost <= 0 ? "&mdash;" : "never") : r.payback > N ? `&gt; ${N} ${u}s` : `~${r.payback.toFixed(1)} ${u}s`;
+    $("roiHead").innerHTML = `<div class="grid grid-cols-3 gap-3 mb-3"><div class="bg-white rounded-xl border border-ink-200 border-l-4 border-l-brand-500 p-3"><div class="text-[10px] uppercase text-ink-400">Net value (${N}-${u})</div><div class="text-[20px] font-bold" style="color:${tone}">${r.net >= 0 ? "+" : "-"}${money(Math.abs(r.net)).replace("-", "")}</div><div class="text-[11px] text-ink-500">ROI ${r.roi === null ? "&mdash;" : Math.round(r.roi) + "%"} &middot; value ${money(r.value)}</div></div>`
+      + `<div class="bg-white rounded-xl border border-ink-200 p-3"><div class="text-[10px] uppercase text-ink-400">Payback period</div><div class="text-[20px] font-bold text-ink-900">${pb}</div><div class="text-[11px] text-ink-500">at ${money(r.cost)} total cost</div></div>`
+      + `<div class="bg-white rounded-xl border border-ink-200 p-3"><div class="text-[10px] uppercase text-ink-400">Value vs cost</div><div class="text-[20px] font-bold text-ink-900">${money(r.value)} / ${money(r.cost)}</div><div class="text-[11px] text-ink-500">KPI value vs lever + intervention cost</div></div></div>`;
+    $("roiBuys").innerHTML = `<h4 class="text-[12px] font-semibold text-ink-700 mb-1">What the move buys you</h4><div class="grid grid-cols-4 gap-2 mb-3">${r.buys.map(x => { const k = ST.kpis.find(y => y.name === x.kpi), q = x.to - x.from, good = k.better === "lower" ? q <= 0 : q >= 0, col = Math.abs(q) < 1e-9 ? "#64748b" : good ? "#16a34a" : "#dc2626";
+      return `<div class="rounded-lg border border-ink-100 bg-ink-50/50 p-2" title="${esc(k.desc || "")}"><p class="text-ink-400 text-[9px] uppercase">${label(x.kpi)}</p><p class="text-[13px] font-bold text-ink-900">${fmt(x.from)} &rarr; ${fmt(x.to)}</p><p class="text-[10px]" style="color:${col}">${q >= 0 ? "+" : ""}${fmt(q)} vs problem</p></div>`; }).join("")}</div>`
+      + `<table class="w-full"><tr>${th("Flow")}${th("Problem")}${th("Mitigated")}${th("Change")}</tr>${Object.entries(r.flows).map(([f, v]) => `<tr>${td(label(f))}${td(fmt(v.from))}${td(fmt(v.to), "font-semibold")}${td((v.to - v.from >= 0 ? "+" : "") + fmt(v.to - v.from))}</tr>`).join("")}</table>`;
+  } catch (e) { $("roiHead").innerHTML = `<p class="text-[12px] text-status-danger">${esc(e.message)}</p>`; }
+}
+async function drawOptimize() {
+  ST = await api(`/api/apps/${SLUG}/studio`); WB = await api(`/api/apps/${SLUG}/workbook`);
+  ST.group_column = (UC.procspec && UC.procspec.groups && UC.procspec.groups.column) || "group";
+  const r0 = await post(`/api/apps/${SLUG}/run`, {shift: {}, reps: 100}); BL0 = Object.fromEntries(Object.entries(r0.kpis).map(([k, v]) => [k, v.baseline]));
+  $("content").innerHTML = optimizeView(); optGoalChange();
+  ON_OPEN.roi = runROI;
+}
+
+// ---------- Drivers & Forecast (CT's Drivers, Forecast, Uncertainty) ----------
+let DR = null, FC = null, FAC = {}, SEED = 42;
+let SIG = [];
+function sigCard(x, i) {             // CT's signal box: emoji, title, tag, on/off, description, what it looks for, its fields
+  const per = BLF ? BLF.periods : [], sel = (key, v) => `<select onchange="sigSet(${i},'${key}',+this.value)" class="border border-ink-300 rounded px-1 py-0.5 text-[11px] bg-white">${per.map((p, j) => `<option value="${j}" ${+v === j ? "selected" : ""}>${p}</option>`).join("")}</select>`;
+  const num = (key, v, mn, mx, st) => `<input type="number" value="${v ?? 0}" min="${mn}" max="${mx}" step="${st}" onchange="sigSet(${i},'${key}',+this.value)" class="w-16 border border-ink-300 rounded px-1 py-0.5 text-[11px] text-right">`;
+  const row = (l, inp) => `<div class="flex items-center justify-between gap-2 mb-1"><span class="text-[10px] text-ink-500">${l}</span>${inp}</div>`, p = x.params || {};
+  const fields = x.shape === "wave" ? row("Amplitude %", num("amplitude_pct", p.amplitude_pct, 0, 80, 1)) + row(`Peak ${esc(DR.time_unit)}`, sel("peak", p.peak)) + row(`Period (${esc(DR.time_unit)}s)`, num("period", p.period, 2, 36, 1))
+    : row(`From ${esc(DR.time_unit)}`, sel("from", p.from)) + row("Change %", num("change_pct", p.change_pct, -80, 200, 1)) + (x.shape === "ramp" ? row(`Ramp (${esc(DR.time_unit)}s)`, num("ramp", p.ramp, 1, 24, 1)) : "");
+  const fopts = DR.factors.map(f => `<option value="${esc(f.key)}" ${f.key === x.factor ? "selected" : ""}>${esc(f.label)}</option>`).join("");
+  const tag = x.feed ? '<span class="text-[8px] bg-amber-50 text-amber-700 border border-amber-200 px-1 py-0.5 rounded-full">market feed</span>' : '<span class="text-[8px] bg-ink-50 text-ink-400 border border-ink-200 px-1 py-0.5 rounded-full">manual</span>';
+  return `<div class="rounded-lg border border-ink-200 p-3 mb-2.5 h-full flex flex-col"><div class="flex items-center gap-2 mb-1"><span>${esc(x.emoji || "📍")}</span><span class="text-[12px] font-semibold text-ink-800">${esc(x.title)}</span>${tag}`
+    + `<label class="ml-auto relative inline-flex items-center cursor-pointer"><input type="checkbox" ${x.enabled ? "checked" : ""} onchange="sigSet(${i},'enabled',this.checked)" class="sr-only peer"><span class="sig-toggle w-8 h-4 bg-ink-200 rounded-full peer-checked:bg-brand-500 transition-colors relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4"></span></label></div>`
+    + `<p class="text-[9.5px] text-ink-400 mb-1 leading-snug">${esc(x.desc)}</p>${x.feed ? `<p class="text-[9px] text-brand-600 mb-2 leading-snug">&#128225; Looks for: ${esc(x.feed)}</p>` : ""}`
+    + `<div style="opacity:${x.enabled ? 1 : .45}">${row("Moves", `<select onchange="sigSet(${i},'factor',this.value)" class="border border-ink-300 rounded px-1 py-0.5 text-[11px] bg-white w-28">${fopts}</select>`)}`
+    + row("Shape", `<select onchange="sigSet(${i},'shape',this.value)" class="border border-ink-300 rounded px-1 py-0.5 text-[11px] bg-white">${["step", "ramp", "wave"].map(v => `<option ${v === x.shape ? "selected" : ""}>${v}</option>`).join("")}</select>`)
+    + `${fields}</div><div class="pt-1 flex justify-end" style="margin-top:auto"><button onclick="sigEdit(${i})" class="text-[10px] text-ink-500 hover:text-brand-700">&#9998; edit text</button><button onclick="sigDel(${i})" class="text-[10px] text-ink-400 ml-2">remove</button></div></div>`;
+}
+function driversView() {
+  const cards = SIG.map(sigCard).join("") + `<button onclick="sigAdd()" class="rounded-lg border border-dashed border-ink-300 p-3 mb-2.5 h-full text-[12px] text-ink-500 hover:text-brand-700 hover:border-brand-300">+ Add a market signal</button>`;
+  const drv = `<div class="bg-white rounded-lg border border-ink-200 p-5"><div class="flex items-center gap-2 mb-1"><h3 class="text-[14px] font-semibold text-ink-800">Market-journey what-if</h3></div>`
+    + `<p class="text-[11px] text-ink-500 mb-4">What happens in the market — seasonal peaks, launches, competitor moves, rule changes — reshapes what arrives and how it converts. Switch the signals on and watch the KPIs respond, in plain English.</p>`
+    + `<div class="flex items-center gap-2 mb-2"><h4 class="text-[12px] font-semibold text-ink-700 uppercase tracking-wide">Market signals</h4><span class="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full">this business</span></div>`
+    + `<p class="text-[10px] text-ink-400 mb-2">Proposed for this business from its documents and outside factors. Toggle the events you expect, adjust their values, edit them, or add your own — they are saved with the model.</p>`
+    + `<div class="grid grid-cols-3 gap-3 items-stretch mb-4">${cards}</div>`
+    + `<div class="border-t border-ink-100 pt-4 grid grid-cols-5 gap-4"><div class="col-span-2 space-y-3"><div class="rounded-lg border border-ink-200 bg-white p-4"><div class="flex items-center gap-2 mb-1"><h4 class="text-[12px] font-semibold text-ink-700">What this means for the business</h4><span class="text-[8px] bg-ink-100 text-ink-500 px-1.5 py-0.5 rounded-full">plain-English readout</span></div>`
+    + `<div id="mktNarr" class="text-[12px] text-ink-700 leading-relaxed">Toggle a signal to see the effect.</div></div><div id="mktKpis" class="grid grid-cols-3 gap-2"></div></div>`
+    + `<div class="col-span-3 rounded-lg border border-ink-200 bg-white p-4"><div class="mb-1"><h4 class="text-[12px] font-semibold text-ink-700" id="mktTitle">Demand curve</h4><span class="text-[9px] text-ink-400">per ${esc(DR.time_unit)} &middot; baseline vs with signals</span></div><div style="height:250px"><canvas id="mktChart"></canvas></div></div></div></div>`;
+  const cin = (lab, id, val, mn, mx, st, desc) => `<div title="${esc(desc)}"><div class="flex items-center gap-2"><label class="text-[10px] text-ink-600 font-medium whitespace-nowrap">${lab}</label>`
+    + `<input type="number" id="${id}" value="${val}" min="${mn}" max="${mx}" step="${st}" oninput="scheduleHolt()" class="w-20 border border-ink-300 rounded px-2 py-1 text-[12px]"></div><p class="text-[9px] text-ink-400 mt-0.5 leading-tight">${desc}</p></div>`;
+  const M = FC.main, u = FC.time_unit, P0 = FC.params;
+  const ctrl = `<div class="rounded-lg border border-ink-100 bg-ink-50/40 px-3 py-2"><p class="text-[10px] text-ink-400 mb-1.5">Forecast = <b class="text-ink-600">Holt</b> (damped trend) fit on our ${M.history.length}-${esc(u)} history of ${label(M.flow)} &middot; accuracy = hold-out backtest (last ${esc(u)}s).</p>`
+    + `<div class="grid grid-cols-3 gap-4">${cin(`Horizon (${esc(u)}s)`, "fcHorizon", P0.horizon, 3, 36, 1, `${label(u)}s projected ahead.`)}`
+    + cin("&alpha; &mdash; level", "fcAlpha", P0.alpha, 0.05, 0.9, 0.05, "How fast the forecast follows recent periods &mdash; higher reacts quicker, lower is smoother.")
+    + cin("&phi; &mdash; damping", "fcDamping", P0.phi, 0.5, 1.0, 0.05, "Below 1 flattens the trend over time so it doesn&rsquo;t run away.") + `</div></div>`;
+  const outlook = `<div id="fcTiles" class="grid grid-cols-4 gap-2"></div><div class="rounded-lg border border-ink-200 bg-white p-3"><div class="flex items-center gap-2 mb-1"><h4 class="text-[12px] font-semibold text-ink-700">${label(M.flow)} outlook</h4>`
+    + `<span class="text-[9px] text-ink-400">actual &rarr; forecast &middot; grey dashed = model fit (Holt)</span></div><div style="height:165px"><canvas id="fcDemand"></canvas></div></div>`;
+  const ahead = `<div class="grid grid-cols-2 gap-2"><div class="rounded-lg border border-ink-200 bg-white p-3"><div class="mb-1"><h4 class="text-[12px] font-semibold text-ink-700">The process ahead</h4><span class="text-[9px] text-ink-400">each flow per ${esc(u)} (simulator, same-${esc(u)} pattern)</span></div><div style="height:150px"><canvas id="fcFlows"></canvas></div></div>`
+    + `<div class="rounded-lg border border-ink-200 bg-white p-3"><div class="mb-1"><h4 class="text-[12px] font-semibold text-ink-700">${Object.keys(FC.flows_ahead.stocks).length ? "Projected stocks" : "KPI ahead"}</h4><span class="text-[9px] text-ink-400">${Object.keys(FC.flows_ahead.stocks).length ? "carried stock at the end of each period (engine)" : "the main KPI per period (engine, P50)"}</span></div><div style="height:150px"><canvas id="fcInv"></canvas></div></div></div>`;
+  const dot = {sky: "#0ea5e9", amber: "#d97706", red: "#dc2626", emerald: "#16a34a"};
+  const helps = `<div class="rounded-lg border border-ink-200 bg-white p-3"><div class="flex items-center gap-2 mb-2"><h4 class="text-[12px] font-semibold text-ink-700">Where the forecast helps</h4><span class="text-[8px] bg-ink-100 text-ink-500 px-1.5 py-0.5 rounded-full">forward signals &amp; actions</span></div>`
+    + `<div class="grid grid-cols-1 gap-2">${FC.helps.map(h => `<div class="rounded-lg border border-ink-100 bg-white p-3"><div class="flex items-center gap-2 mb-0.5"><span class="h-2 w-2 rounded-full" style="background:${dot[h.tone] || dot.sky}"></span><span class="text-[12px] font-semibold text-ink-800">${esc(h.title)}</span></div>`
+      + `<p class="text-[11px] text-ink-600 leading-snug">${esc(h.obs)}</p><p class="text-[11px] text-brand-700 mt-1"><b>&rarr; </b>${esc(h.act)}</p></div>`).join("")}</div></div>`;
+  const table = `<div class="rounded-lg border border-ink-200 bg-white p-3"><h4 class="text-[12px] font-semibold text-ink-700 mb-1">Per-${label(FC.group_column || "group")} forecast</h4><div class="overflow-x-auto"><table class="w-full text-[12px]"><thead><tr class="text-ink-400 text-[10px] uppercase border-b border-ink-100">`
+    + `<th class="text-left py-1">${label(FC.group_column || "Group")}</th><th class="text-right">Forecast avg / ${esc(u)}</th><th class="text-right">Horizon total</th><th class="text-right">Trend</th></tr></thead><tbody>`
+    + FC.by_group.map(g => `<tr class="border-b border-ink-50"><td class="py-1 text-ink-700">${esc(g.group)}</td><td class="text-right tabular-nums text-ink-800">${fmt(g.avg)}</td><td class="text-right tabular-nums text-ink-500">${fmt(g.total)}</td>`
+      + `<td class="text-right tabular-nums" style="color:${g.trend > 2 ? "#d97706" : g.trend < -2 ? "#16a34a" : "#8592a8"}">${g.trend >= 0 ? "&#9650;" : "&#9660;"} ${Math.abs(g.trend).toFixed(0)}%</td></tr>`).join("")
+    + `</tbody></table></div><p class="text-[10px] text-ink-400 mt-1">${label(M.flow)} by ${label(FC.group_column || "group")}, the same model on each one's history. Trend = late-horizon vs early-horizon average.</p></div>`;
+  const fc = `<div class="space-y-2" id="fcBody">${ctrl}${outlook}${ahead}<div class="grid grid-cols-2 gap-2 items-start">${helps}${table}</div></div>`;
+  const usl = (lab, id, val, mn, mx, st, unit) => `<div class="mb-2"><div class="flex justify-between items-baseline"><label class="text-[10px] text-ink-600">${lab}</label><span class="text-[11px] font-semibold text-brand-700"><span id="${id}_v">${val}</span>${unit}</span></div>`
+    + `<input type="range" id="${id}" min="${mn}" max="${mx}" step="${st}" value="${val}" class="w-full accent-brand-600" oninput="document.getElementById('${id}_v').innerText=this.value"></div>`;
+  const k0 = DR.kpis[0];
+  const tgt0 = k0.target ?? (BL0 ? +(BL0[k0.name] || 0).toFixed(1) : 0);
+  const unc = `<div class="grid grid-cols-3 gap-3 mb-3"><div class="rounded-lg border border-ink-200 bg-white p-3 mb-3"><h4 class="text-[12px] font-semibold text-ink-700 mb-2">Volatility (per-${esc(u)})</h4>`
+    + usl("Demand (arrivals) volatility", "uncDcv", 9, 0, 40, 1, "% CV") + usl("Outside-rate volatility", "uncScv", 5, 0, 40, 1, "% CV")
+    + `<p class="text-[9px] text-ink-400 mt-1">Defaults are an assumed stress level &mdash; not a precise historical measurement. CV = how much each ${esc(u)} swings around the expected value.</p></div>`
+    + `<div class="rounded-lg border border-ink-200 bg-white p-3 mb-3"><h4 class="text-[12px] font-semibold text-ink-700 mb-2">Run settings</h4>` + usl("Trials", "uncTrials", 40, 10, 120, 10, " runs")
+    + `<div class="mb-2"><div class="flex justify-between items-baseline"><label class="text-[10px] text-ink-600" title="${esc(k0.desc || "")}">${label(k0.name)} target</label><span class="text-[11px] font-semibold text-brand-700"><input id="uncTarget" type="number" step="any" value="${tgt0}" class="w-16 border border-ink-300 rounded px-1 py-0.5 text-[11px] text-right">${kunit(k0)}</span></div></div>`
+    + `<div class="flex items-center justify-between mt-1"><span class="text-[10px] text-ink-500">Seed <span class="font-mono text-ink-700" id="uncSeed">${SEED}</span></span><button onclick="SEED=Math.floor(Math.random()*9999);$('uncSeed').textContent=SEED" class="text-[10px] px-2 py-1 rounded border border-ink-200 text-ink-600 hover:bg-ink-50">&#8635; Reroll</button></div>`
+    + `<button id="uncRun" onclick="runUncertainty()" class="mt-2 w-full bg-brand-600 text-white px-3 py-2 rounded-md text-[13px] font-medium">&#9654; Run</button><p class="text-[9px] text-ink-400 mt-1">More trials = smoother bands, slower. Same seed reproduces the exact bands.</p></div>`
+    + `<div class="rounded-lg border border-amber-200 bg-amber-50/40 p-3"><h4 class="text-[12px] font-semibold text-ink-800 mb-1">Scenario</h4><p class="text-[9px] text-ink-500 mb-2">Run the bands on the baseline or under a volume stress.</p><select id="uncStart" class="w-full border border-ink-300 rounded px-2 py-1 text-[12px] bg-white">${STARTS.map(([l, v]) => `<option value="${v}">${l}</option>`).join("")}</select></div></div>`
+    + `<div id="uncStatus" class="text-[12px] text-ink-400 mb-2">Press Run to compute the bands.</div><div id="uncTiles" class="grid grid-cols-3 gap-2"></div>`
+    + `<div class="grid grid-cols-2 gap-3 mt-3" id="uncCharts"></div>`
+    + `<div class="rounded-lg border border-ink-200 bg-white p-3 mt-3"><div class="flex items-center gap-2 mb-2"><h4 class="text-[12px] font-semibold text-ink-700 shrink-0">Inspect a ${esc(u)}</h4><input type="range" id="uncWk" min="0" max="0" step="1" value="0" class="flex-1 accent-brand-600" oninput="inspectWeek()"><span id="uncWkLbl" class="text-[11px] font-mono text-ink-600 shrink-0 w-28 text-right"></span></div><div id="uncInspect" class="grid grid-cols-4 gap-2"></div></div>`
+    + `<p class="text-[9px] text-ink-400 mt-3">Method: N seeded trials, each nudging every ${esc(u)}&rsquo;s outside volumes and rates around the forecast, run through the full simulator; bands are per-${esc(u)} percentiles across trials.</p>`;
+  return section("drv", "Drivers &mdash; market-journey what-if", drv, "market signals", true)
+    + section("fc", "Forecast &mdash; forward demand outlook", fc, `${FC.params.horizon}-${esc(FC.time_unit)}`, false)
+    + section("unc", "Uncertainty &mdash; volatility &amp; risk bands", unc, "Monte-Carlo", false);
+}
+let MK_T = null;
+async function saveSignals() { SIG = await post(`/api/apps/${SLUG}/signals`, {signals: SIG}); }
+function sigSet(i, key, v) {
+  const x = SIG[i]; if (["enabled", "factor", "shape"].includes(key)) x[key] = v; else x.params = {...x.params, [key]: v};
+  if (key === "shape") x.params = v === "wave" ? {amplitude_pct: 10, peak: 0, period: 12} : v === "ramp" ? {from: 0, change_pct: 10, ramp: 3} : {from: 0, change_pct: 10};
+  if (["enabled", "factor", "shape"].includes(key)) redrawSignals();
+  clearTimeout(MK_T); MK_T = setTimeout(async () => { await saveSignals(); runMarket(); }, 350);
+}
+function redrawSignals() { const g = $("secdrv").querySelector(".grid.grid-cols-3"); if (g) g.outerHTML = `<div class="grid grid-cols-3 gap-3 items-stretch mb-4">${SIG.map(sigCard).join("")}<button onclick="sigAdd()" class="rounded-lg border border-dashed border-ink-300 p-3 mb-2.5 h-full text-[12px] text-ink-500 hover:text-brand-700 hover:border-brand-300">+ Add a market signal</button></div>`; }
+function sigAdd() { const f = DR.factors[0]; SIG.push({id: "signal_" + Date.now(), emoji: "📍", title: "New signal", desc: "Describe what happens in the market.", feed: "", factor: f.key, shape: "step", params: {from: 0, change_pct: 10}, enabled: false}); redrawSignals(); saveSignals(); }
+function sigDel(i) { SIG.splice(i, 1); redrawSignals(); saveSignals().then(runMarket); }
+function sigEdit(i) { const x = SIG[i], t = prompt("Signal name", x.title); if (t === null) return; const dsc = prompt("What happens (one sentence)", x.desc); const fd = prompt("What to watch for (optional)", x.feed || "");
+  x.title = t || x.title; if (dsc !== null) x.desc = dsc; if (fd !== null) x.feed = fd; redrawSignals(); saveSignals(); }
+async function runMarket() {
+  const d = await post(`/api/apps/${SLUG}/market`, {signals: SIG}), N = d.narrative;
+  const sec = (l, inner) => `<div><p class="text-[9px] uppercase tracking-wide text-brand-600 font-semibold">${l}</p>${inner}</div>`;
+  $("mktNarr").innerHTML = `<div class="space-y-2">${sec("What&rsquo;s happening &amp; when", `<ul style="list-style:disc" class="pl-4 text-[11px] space-y-0.5 mt-0.5">${N.happening.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`)}`
+    + (N.net.length ? sec("Net effect on what arrives and converts", `<p class="text-[11px] mt-0.5">${N.net.map(esc).join(" &middot; ")}</p>`) : "")
+    + sec("What it does to the KPIs", `<p class="text-[11px] mt-0.5">${N.kpis.map(esc).join(" &middot; ")}</p>`)
+    + sec("Why", `<p id="mktWhy" class="text-[11px] mt-0.5 text-ink-500">${SIG.some(x => x.enabled) ? "interpreting&hellip;" : "Switch a signal on to see why the KPIs move."}</p>`) + `</div>`;
+  if (SIG.some(x => x.enabled)) fetch(`/api/apps/${SLUG}/narrate`, {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({kind: "market signals: explain in plain English why the KPIs move or do not move, what it means for the business, and what to watch", payload: {signals: SIG.filter(x => x.enabled).map(x => ({title: x.title, what: x.desc})), happening: N.happening, net: N.net, kpis: N.kpis, flows: d.flows}, fallback: N.kpis.join("; ")})})
+    .then(r => r.json()).then(r => { const el = $("mktWhy"); if (el) el.innerHTML = esc(r.text) + (r.source === "model" ? ' <span class="text-[9px] px-1.5 py-0.5 rounded-full border bg-brand-50 text-brand-700 border-brand-200">interpreted</span>' : ""); });
+  $("mktKpis").innerHTML = Object.entries(d.kpis).map(([k, v]) => { const dd = v.sig - v.base, good = v.low_good ? dd <= 0 : dd >= 0, col = Math.abs(dd) < 1e-9 ? "#64748b" : good ? "#16a34a" : "#dc2626", km = DR.kpis.find(x => x.name === k) || {};
+    return `<div class="rounded-lg border border-ink-100 bg-white p-2" title="${esc(km.desc || "")}"><p class="text-[8.5px] uppercase text-ink-400">${label(k)}</p><p class="text-[14px] font-bold text-ink-900 leading-tight">${fmt(v.sig)}${kunit(km)}</p><p class="text-[9px]" style="color:${col}">base ${fmt(v.base)} &middot; ${dd >= 0 ? "+" : "−"}${fmt(Math.abs(dd))}</p></div>`; }).join("")
+    + Object.entries(d.flows).map(([f, v]) => { const dd = v.sig - v.base; return `<div class="rounded-lg border border-ink-100 bg-white p-2"><p class="text-[8.5px] uppercase text-ink-400">${label(f)}</p><p class="text-[14px] font-bold text-ink-900 leading-tight">${fmt(v.sig)}</p><p class="text-[9px] text-ink-500">base ${fmt(v.base)} &middot; ${dd >= 0 ? "+" : "−"}${fmt(Math.abs(dd))}</p></div>`; }).join("");
+  $("mktTitle").textContent = `${label(d.curve.flow || "Demand")} curve`.replace(/&[a-z]+;/g, "");
+  chart("mktChart", {type: "line", data: {labels: d.periods, datasets: [BASE_DS(d.curve.baseline), SCEN_DS(d.curve.signals, {label: "With signals"})]}, options: {scales: axis(DR.time_unit, label(d.curve.flow || ""))}});
+}
+let HOLT_T = null;
+function scheduleHolt() { clearTimeout(HOLT_T); HOLT_T = setTimeout(async () => {
+  FC = await post(`/api/apps/${SLUG}/forecast`, {horizon: +$("fcHorizon").value, alpha: +$("fcAlpha").value, phi: +$("fcDamping").value}); drawForecast(); }, 400); }
+function drawForecast() {
+  const M = FC.main, u = FC.time_unit, tile = (l, v, sub, c) => `<div class="rounded-lg border border-ink-100 bg-white px-3 py-1.5"><p class="text-[8.5px] uppercase text-ink-400 tracking-wide">${l}</p><p class="text-[15px] font-bold leading-tight" style="color:${c || "#1f2532"}">${v}</p><p class="text-[9px] text-ink-400 leading-tight">${sub}</p></div>`;
+  const [t1, t2, t3, t4] = M.tiles, mape = M.mape;
+  $("fcTiles").innerHTML = tile(esc(t1.label), fmt(t1.value), esc(t1.sub)) + tile(esc(t2.label), (t2.value >= 0 ? "+" : "") + t2.value.toFixed(0) + "%", esc(t2.sub), t2.value > 2 ? "#d97706" : t2.value < -2 ? "#16a34a" : "#1f2532")
+    + tile(esc(t3.label), t3.value === null ? "&mdash;" : t3.value.toFixed(0) + "%", mape === null ? "n/a" : esc(t3.sub), mape === null ? "#8592a8" : mape < 12 ? "#16a34a" : mape < 20 ? "#d97706" : "#dc2626")
+    + tile(esc(t4.label), `${t4.value} ${esc(u)}s`, esc(t4.sub));
+  const n = M.history.length, L = M.history_periods.concat(M.periods), pad = a => Array(n).fill(null).concat(a);
+  chart("fcDemand", {type: "line", data: {labels: L, datasets: [
+    {label: "Actual", data: M.history.concat(Array(M.periods.length).fill(null)), borderColor: "#1c2e8f", borderWidth: 2, pointRadius: 0, tension: .25},
+    {label: "Model fit (Holt)", data: M.fit.concat(Array(M.periods.length).fill(null)), borderColor: "#94a3b8", borderDash: [4, 3], borderWidth: 1.4, pointRadius: 0},
+    {label: "Forecast", data: pad(M.forecast), borderColor: "#3366ff", backgroundColor: "rgba(51,102,255,.08)", fill: true, borderWidth: 2, pointRadius: 0, tension: .3}]}, options: {scales: axis(u, label(M.flow))}});
+  const A = FC.flows_ahead;
+  chart("fcFlows", {type: "line", data: {labels: A.periods, datasets: Object.entries(A.flows).map(([f, v], i) => ({label: label(f), data: v, borderColor: PAL[i % PAL.length], borderWidth: 1.8, pointRadius: 0, tension: .3}))}, options: {scales: axis(u, "")}});
+  const st = Object.entries(A.stocks);
+  if (st.length) chart("fcInv", {type: "line", data: {labels: A.periods, datasets: st.map(([f, v], i) => ({label: label(f), data: v, borderColor: PAL[(i + 2) % PAL.length], borderWidth: 1.8, pointRadius: 0}))}, options: {scales: axis(u, "")}});
+  else { const k = DR.kpis[0]; chart("fcInv", {type: "line", data: {labels: BLF.periods, datasets: [BASE_DS(BLF.kpis[k.name].p50, {label: label(k.name)})]}, options: {scales: axis(u, label(k.name))}}); }
+}
+let UNC = null;
+async function runUncertainty() {
+  const b = $("uncRun"); b.disabled = true; b.innerHTML = "Running&hellip;"; $("uncStatus").textContent = "Running the trials…";
+  try {
+    const k0 = DR.kpis[0];
+    UNC = await post(`/api/apps/${SLUG}/uncertainty`, {dcv: +$("uncDcv").value, scv: +$("uncScv").value, trials: +$("uncTrials").value, seed: SEED, targets: {[k0.name]: +$("uncTarget").value}});
+    renderUnc();
+  } catch (e) { $("uncStatus").innerHTML = `<span class="text-status-danger">${esc(e.message)}</span>`; }
+  b.disabled = false; b.innerHTML = "&#9654; Run";
+}
+function renderUnc() {
+  const d = UNC, tile = (l, v, sub, tone) => `<div class="rounded-lg border border-ink-100 bg-white px-3 py-1.5"><p class="text-[8.5px] uppercase text-ink-400">${l}</p><p class="text-[15px] font-bold leading-tight" style="color:${tone || "#1f2532"}">${v}</p><p class="text-[9px] text-ink-400 leading-tight">${sub}</p></div>`;
+  $("uncStatus").textContent = `${d.trials} trials · seed ${d.seed} · demand ±${d.dcv}% · outside rates ±${d.scv}%`;
+  const tiles = [];
+  DR.kpis.forEach(k => { const x = d.kpis[k.name], H = x.horizon;
+    tiles.push(tile(`${label(k.name)} (median)`, fmt(H.p50) + kunit(k), `P10–P90 ${fmt(H.p10)}–${fmt(H.p90)}`));
+    if (x.prob_meet !== null && x.prob_meet !== undefined) { const pm = Math.round(x.prob_meet * 100);
+      tiles.push(tile(`P(${label(k.name)} ${k.better === "lower" ? "&le;" : "&ge;"} ${fmt(x.target)}${kunit(k)})`, pm + "%", `${d.trials} trials`, pm >= 80 ? "#16a34a" : pm >= 50 ? "#d97706" : "#dc2626")); } });
+  Object.entries(d.flows).forEach(([f, v]) => { const tot = a => a.reduce((s, x) => s + x, 0); tiles.push(tile(`${label(f)} (median, total)`, fmt(tot(v.p50)), `P10–P90 ${fmt(tot(v.p10))}–${fmt(tot(v.p90))}`)); });
+  $("uncTiles").innerHTML = tiles.slice(0, 6).join("");
+  const series = DR.kpis.map(k => [label(k.name), d.kpis[k.name], k]).concat(Object.entries(d.flows).map(([f, v]) => [label(f), v, null]));
+  const cols = ["#dc2626", "#d97706", "#0ea5e9", "#1c2e8f"], bands = ["rgba(220,38,38,.10)", "rgba(217,119,6,.10)", "rgba(14,165,233,.10)", "rgba(28,46,143,.10)"];
+  $("uncCharts").innerHTML = series.slice(0, 4).map(([n], i) => `<div class="rounded-lg border border-ink-200 bg-white p-3"><h4 class="text-[12px] font-semibold text-ink-700">${n}</h4><p class="text-[9px] text-ink-400 mb-1">P10 / median / P90${i < DR.kpis.length ? " &middot; dashed = single-run estimate" : ""}</p><div style="height:150px"><canvas id="uncC${i}"></canvas></div></div>`).join("");
+  series.slice(0, 4).forEach(([n, x], i) => chart(`uncC${i}`, {type: "line", data: {labels: d.periods, datasets: [
+    {label: "P90", data: x.p90, borderColor: "transparent", backgroundColor: bands[i], pointRadius: 0, fill: "+1"}, {label: "P10", data: x.p10, borderColor: "transparent", pointRadius: 0, fill: false},
+    {label: "Median", data: x.p50, borderColor: cols[i], borderWidth: 2, pointRadius: 0, tension: .3}].concat(x.det ? [{label: "Single run", data: x.det, borderColor: "#64738c", borderDash: [4, 3], borderWidth: 1.2, pointRadius: 0}] : [])},
+    options: {plugins: {legend: {labels: {filter: y => !/^P(10|90)$/.test(y.text)}}}, scales: axis(DR.time_unit, n)}}));
+  const wk = $("uncWk"); wk.max = d.periods.length - 1; wk.value = Math.floor(d.periods.length / 2); inspectWeek();
+}
+function inspectWeek() {
+  const d = UNC; if (!d) return; const i = +$("uncWk").value;
+  $("uncWkLbl").innerText = d.periods[i];
+  const cell = (l, b, k) => `<div class="rounded-lg border border-ink-100 bg-ink-50/40 p-2"><p class="text-[8.5px] uppercase text-ink-400">${l}</p><p class="text-[11px] text-ink-800 leading-tight">${fmt(b.p10[i])} / <b>${fmt(b.p50[i])}</b> / ${fmt(b.p90[i])}${k ? kunit(k) : ""}</p><p class="text-[8px] text-ink-400">P10 / P50 / P90</p></div>`;
+  $("uncInspect").innerHTML = DR.kpis.map(k => cell(label(k.name), d.kpis[k.name], k)).concat(Object.entries(d.flows).map(([f, v]) => cell(label(f), v, null))).slice(0, 8).join("");
+}
+let BLF = null;
+async function drawDrivers() {
+  let bl;
+  [DR, FC, bl] = await Promise.all([api(`/api/apps/${SLUG}/drivers`), api(`/api/apps/${SLUG}/forecast`), api(`/api/apps/${SLUG}/baseline`)]);
+  BLF = bl.forecast; BL0 = Object.fromEntries(bl.kpis.map(k => [k.name, bl.history.kpis[k.name][bl.history.kpis[k.name].length - 1]]));
+  SIG = await api(`/api/apps/${SLUG}/signals`);
+  $("content").innerHTML = driversView(); runMarket();
+  ON_OPEN.fc = drawForecast; ON_OPEN.unc = () => { if (!UNC) runUncertainty(); };
+}
+
+// ---------- Watchtower (CT's Proactive Alerts, Causal Explanation, Advisor) ----------
+let SC = [], WT = null;
+const wSev = {critical: {border: "border-l-red-500", dot: "#dc2626", chip: "bg-red-50 text-red-700 border-red-200", label: "critical"},
+              warning: {border: "border-l-amber-500", dot: "#d97706", chip: "bg-amber-50 text-amber-700 border-amber-200", label: "warning"}};
+const scOpts = (id, fn) => `<select id="${id}" onchange="${fn}()" class="flex-1 border border-ink-300 rounded px-2 py-1 text-[12px] bg-white">${SC.map((x, i) => `<option value="${i}">${esc(x.label)}</option>`).join("")}</select>`;
+function alRow(lab, id, val, mn, mx, st, unit, desc) {
+  return `<div class="flex items-center gap-2 py-0.5 border-b border-ink-50 last:border-0" title="${esc(desc)}"><div class="w-40 shrink-0"><div class="text-[10.5px] font-medium text-ink-700 leading-tight">${lab}</div><div class="text-[8.5px] text-ink-400 leading-tight">${esc(desc)}</div></div>`
+    + `<input type="range" id="${id}" min="${mn}" max="${mx}" step="${st}" value="${val}" class="flex-1 accent-brand-600" oninput="document.getElementById('${id}_v').innerText=this.value" onchange="runAlerts()">`
+    + `<span class="text-[11px] font-semibold text-brand-700 w-11 text-right shrink-0"><span id="${id}_v">${val}</span>${unit}</span></div>`;
+}
+function watchView() {
+  const thr = WT.kpis.map((k, i) => { const v = k.target ?? BL0[k.name], span = Math.max(Math.abs(v) * 0.3, 5), st = Math.abs(v) >= 20 ? 0.5 : 0.1;
+    return alRow(`${label(k.name)} ${k.better === "lower" ? "limit" : "target"}`, `alT${i}`, (+v).toFixed(1), (v - span).toFixed(1), (v + span).toFixed(1), st, kunit(k),
+      `${label(k.name)} ${k.better === "lower" ? "above" : "below"} this = alert.`); }).join("");
+  const al = `<div class="grid grid-cols-2 gap-2 items-start mb-2"><div class="rounded-lg border border-ink-200 bg-white p-2.5"><h4 class="text-[10px] font-semibold text-ink-500 mb-1 uppercase tracking-wide">Watch which situation</h4>`
+    + `<div class="flex items-center gap-2 py-0.5 border-b border-ink-50"><div class="w-40 shrink-0"><div class="text-[10.5px] font-medium text-ink-700 leading-tight">Scenario</div><div class="text-[8.5px] text-ink-400 leading-tight">Baseline or a stress scenario.</div></div>${scOpts("alScen", "runAlerts")}<span class="w-11"></span></div></div>`
+    + `<div class="rounded-lg border border-ink-200 bg-white p-2.5"><h4 class="text-[10px] font-semibold text-ink-500 mb-1 uppercase tracking-wide">Alert thresholds</h4>${thr}</div></div>`
+    + `<div id="alHealth" class="mb-2"></div><div class="rounded-lg border border-ink-200 border-l-4 border-l-brand-400 bg-white p-2.5 mb-2"><div class="flex items-center gap-2 mb-0.5"><h4 class="text-[11px] font-semibold text-ink-700">Alert summary</h4><span id="alSumTag"></span></div><div id="alSummary" class="text-[11.5px] text-ink-700 leading-snug">&hellip;</div></div>`
+    + `<div id="alCards" class="space-y-1.5"></div><div class="grid grid-cols-2 gap-2 mt-2">${WT.kpis.slice(0, 2).map((k, i) => `<div class="rounded-lg border border-ink-200 bg-white p-2.5"><h4 class="text-[11px] font-semibold text-ink-700">${label(k.name)} vs ${k.better === "lower" ? "limit" : "target"}</h4><span class="text-[8.5px] text-ink-400">per ${esc(WT.time_unit)} for the situation watched</span><div style="height:125px"><canvas id="alC${i}"></canvas></div></div>`).join("")}</div>`;
+  const ca = `<div class="rounded-lg border border-ink-100 bg-ink-50/40 p-2.5 mb-2 flex items-end gap-3"><div class="w-48"><label class="text-[10px] text-ink-500 block mb-0.5 uppercase tracking-wide">Explain scenario</label>${scOpts("caScen", "runCausal")}</div>`
+    + `<p class="text-[9px] text-ink-400 flex-1">What moved vs baseline, why, and how it chains through the causal network.</p></div>`
+    + `<div id="caWhat" class="mb-2"></div><div id="caMoves" class="grid grid-cols-3 gap-2 mb-2"></div>`
+    + `<div class="rounded-lg border border-ink-200 border-l-4 border-l-brand-400 bg-white p-2.5 mb-2"><div class="flex items-center gap-2 mb-0.5"><h4 class="text-[11px] font-semibold text-ink-700">Why this happens</h4><span class="text-[8px] bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full">grounded in the KG</span></div><div id="caReason" class="text-[11.5px] text-ink-700 leading-snug">&hellip;</div></div>`
+    + `<div class="rounded-lg border border-ink-200 bg-white p-2.5"><div class="flex items-center gap-2 mb-0.5"><h4 class="text-[11px] font-semibold text-ink-700">Causal path &mdash; how this scenario reaches the KPIs</h4><span class="text-[8px] bg-ink-100 text-ink-500 px-1.5 py-0.5 rounded-full">engine mechanism + KG links</span></div>`
+    + `<p class="text-[9px] text-ink-400 mb-2"><span style="color:#1836e1">&#9679; driver</span> &rarr; <span style="color:#b45309">&#9679; mechanism</span> &rarr; <span style="color:#20365f">&#9679; KPI</span> (<span style="color:#dc2626">red</span> = moved unfavourably) &middot; &#9650;/&#9660; = rises / falls. The path is the one traversed in the use case&rsquo;s knowledge graph.</p><div id="caGraph"></div></div>`;
+  const k0 = WT.kpis[0], sugg = ["Summarise the situation and what I should do.", `Why is ${label(k0.name)} moving?`, `How do I improve ${label(k0.name)}?`, `Is ${label(k0.name)} at risk?`, "What is the single best action?"];
+  const ad = `<div class="rounded-lg border border-ink-200 bg-ink-50/40 p-2.5 mb-2 flex items-center gap-2"><span class="text-[9px] bg-brand-50 text-brand-700 border border-brand-200 px-1.5 py-0.5 rounded-full shrink-0">cause: KG &middot; action: optimizer &middot; numbers: simulator</span>`
+    + `<span class="text-[10px] text-ink-600">The recommended action is the <b>optimizer&rsquo;s</b> least-change mitigation; the <b>cause</b> comes from the knowledge graph and the <b>numbers</b> from the simulator. The language model writes the wording from the aggregate payload below.</span></div>`
+    + `<div class="grid grid-cols-3 gap-3"><div class="col-span-1 space-y-2"><div class="rounded-lg border border-ink-200 bg-white p-2.5"><label class="text-[10px] text-ink-500 block mb-0.5 uppercase tracking-wide">Advise on scenario</label>${scOpts("adScen", "noop")}`
+    + `<label class="text-[10px] text-ink-500 block mb-0.5 mt-2 uppercase tracking-wide">Your question</label><textarea id="adQ" rows="2" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();runAdvisor();}" class="w-full border border-ink-300 rounded px-2 py-1 text-[12px]">${sugg[0]}</textarea>`
+    + `<button onclick="runAdvisor()" class="mt-1.5 w-full bg-brand-600 text-white px-3 py-1.5 rounded-md text-[12px] font-medium">Ask the advisor</button>`
+    + `<p class="text-[9px] text-ink-400 mt-2 mb-1 uppercase tracking-wide">Suggested</p><div class="flex flex-wrap gap-1">${sugg.map(q => `<button type="button" data-q="${esc(q)}" onclick="askAdvisor(this.dataset.q)" class="rounded-full border border-ink-200 bg-white px-2 py-1 text-[10px] text-ink-600 hover:border-brand-300 hover:text-brand-700">${esc(q)}</button>`).join("")}</div></div></div>`
+    + `<div class="col-span-2 space-y-2"><div class="rounded-lg border border-ink-200 border-l-4 border-l-brand-400 bg-white p-3"><div class="flex items-center gap-2 mb-1"><h4 class="text-[12px] font-semibold text-ink-700">Advisor</h4><span id="adSubj" class="text-[10px] text-ink-400"></span><span class="ml-auto text-[8px] bg-ink-100 text-ink-500 px-1.5 py-0.5 rounded-full">optimizer &middot; KG &middot; engine</span></div>`
+    + `<div id="adNarr" class="text-[12px] text-ink-700 leading-relaxed">Press &ldquo;Ask the advisor&rdquo; (or a suggested question) to get a read of this scenario.</div><div id="adActions" class="grid grid-cols-2 gap-2 mt-3"></div></div>`
+    + `<div class="rounded-lg border border-ink-200 bg-white p-2.5"><button type="button" onclick="$('adPayWrap').classList.toggle('hidden')" class="flex w-full items-center justify-between text-left"><h4 class="text-[11px] font-semibold text-ink-700">What the advisor sees <span class="text-[8px] font-normal text-ink-400">(exact aggregate payload the language model receives)</span></h4><span class="text-[10px] text-ink-400">show</span></button>`
+    + `<div id="adPayWrap" class="hidden mt-2 space-y-2"><div><p class="text-[8.5px] uppercase text-ink-400 mb-0.5">System prompt</p><pre id="adSys" class="overflow-x-auto rounded border border-ink-100 bg-ink-50/60 p-2 text-[10px] leading-snug text-ink-600 whitespace-pre-wrap"></pre></div>`
+    + `<div><p class="text-[8.5px] uppercase text-ink-400 mb-0.5">User message (aggregate context)</p><pre id="adUser" class="overflow-x-auto rounded border border-ink-100 bg-ink-50/60 p-2 text-[10px] leading-snug text-ink-600 whitespace-pre-wrap"></pre></div>`
+    + `<div><p class="text-[8.5px] uppercase text-ink-400 mb-0.5">Structured context (JSON)</p><pre id="adPayload" class="overflow-x-auto rounded border border-ink-100 bg-ink-50/60 p-2 text-[10px] leading-snug text-ink-600"></pre></div></div></div></div></div>`;
+  return section("wtal", "Proactive Alerts &mdash; early warnings on the horizon", al, "early warning", true)
+    + section("wtca", "Causal Explanation &mdash; what changed, why &amp; the causal network", ca, "knowledge graph", false)
+    + section("wtad", "Advisor &mdash; recommended actions (scenario &rarr; KG cause &rarr; numbers)", ad, "LLM", false);
+}
+function noop() {}
+async function runAlerts() {
+  const sc = SC[+$("alScen").value], thresholds = Object.fromEntries(WT.kpis.map((k, i) => [k.name, +$("alT" + i).value]));
+  const d = await post(`/api/apps/${SLUG}/alerts`, {scenario: sc, thresholds});
+  const oc = d.health === "At risk" ? "#dc2626" : d.health === "Watch" ? "#d97706" : "#16a34a";
+  $("alHealth").innerHTML = `<div class="rounded-lg border border-ink-200 bg-white px-3 py-2"><div class="flex flex-wrap items-center justify-between gap-2"><div class="flex items-center gap-2"><h4 class="text-[12px] font-semibold text-ink-800">Horizon health</h4><span class="text-[10px] font-semibold px-2 py-0.5 rounded-full" style="color:${oc};background:${oc}1a">${d.health}</span></div>`
+    + `<div class="flex items-center gap-3 text-[10px] text-ink-600"><span>&#9679; <b style="color:#dc2626">${d.counts.critical}</b> critical</span><span>&#9679; <b style="color:#d97706">${d.counts.warning}</b> warning</span></div></div>`
+    + `<p class="text-[10px] text-ink-500 mt-0.5">${d.alerts.length ? `${d.alerts.length} alert(s) across the ${d.periods.length}-${esc(WT.time_unit)} horizon; earliest fires ${d.alerts[0].lead} ${esc(WT.time_unit)}(s) out &mdash; lead time to act.` : `No thresholds breached across the ${d.periods.length}-${esc(WT.time_unit)} horizon.`}</p></div>`;
+  $("alCards").innerHTML = d.alerts.length ? d.alerts.map(a => { const s = wSev[a.sev];
+    return `<div class="rounded-lg border border-ink-200 border-l-4 ${s.border} bg-white px-3 py-2"><div class="flex flex-wrap items-center justify-between gap-2"><div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full" style="background:${s.dot}"></span><span class="text-[12px] font-semibold text-ink-800">${esc(a.title)}</span><span class="text-[9px] px-1.5 py-0.5 rounded-full border ${s.chip}">${s.label}</span></div>`
+      + `<span class="text-[10px] text-ink-400">first at ${esc(a.first)} &middot; ${a.lead} ${esc(WT.time_unit)} out &middot; ${a.count} ${esc(WT.time_unit)}(s)</span></div><p class="text-[11px] text-ink-600 mt-0.5">${esc(a.msg)}</p><p class="text-[11px] text-brand-700 mt-0.5"><b>&rarr; </b>${esc(a.rec)}</p></div>`; }).join("")
+    : `<div class="rounded-lg border border-ink-200 bg-white p-4 text-center text-[12px] text-ink-400">&#10003; Nothing to flag &mdash; every KPI stays within its thresholds across the horizon.</div>`;
+  WT.kpis.slice(0, 2).forEach((k, i) => chart(`alC${i}`, {type: "line", data: {labels: d.periods, datasets: [BASE_DS(d.series[k.name], {label: label(k.name)}),
+    {label: k.better === "lower" ? "Limit" : "Target", data: d.periods.map(() => +$("alT" + i).value), borderColor: "#dc2626", borderDash: [3, 3], borderWidth: 1, pointRadius: 0}]}, options: {scales: axis(WT.time_unit, label(k.name))}}));
+  const plain = d.alerts.length ? `${d.health}: ${d.alerts.map(a => `${a.title.replace(/<[^>]+>/g, "")} from ${a.first} for ${a.count} ${WT.time_unit}(s)`).join("; ")}. ${d.alerts[0].rec}` : `Healthy: under ${sc.label}, every KPI stays within its thresholds across the horizon.`;
+  $("alSummary").textContent = "…";
+  fetch(`/api/apps/${SLUG}/narrate`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({kind: "alert summary", payload: {situation: sc.label, health: d.health, alerts: d.alerts.map(a => ({title: a.title, first: a.first, lead: a.lead, count: a.count, msg: a.msg, action: a.rec}))}, fallback: plain})})
+    .then(r => r.json()).then(r => { $("alSummary").textContent = r.text || plain; $("alSumTag").innerHTML = r.source === "model" ? '<span class="text-[9px] px-1.5 py-0.5 rounded-full border bg-brand-50 text-brand-700 border-brand-200">interpreted</span>' : '<span class="text-[9px] px-1.5 py-0.5 rounded-full border bg-ink-50 text-ink-500 border-ink-200">standard reading</span>'; });
+}
+async function runCausal() {
+  const sc = SC[+$("caScen").value], d = await post(`/api/apps/${SLUG}/causal`, {scenario: sc});
+  $("caMoves").innerHTML = d.movements.map(m => { const dd = m.scen - m.base, good = m.low_good ? dd <= 0 : dd >= 0, col = Math.abs(dd) < 1e-9 ? "#64748b" : (m.kind === "flow" ? "#1c2e8f" : good ? "#16a34a" : "#dc2626"), ar = dd > 0 ? "&#9650;" : dd < 0 ? "&#9660;" : "&#8226;";
+    return `<div class="rounded-lg border border-ink-100 bg-ink-50/50 px-3 py-2"><p class="text-ink-400 text-[9px] uppercase">${label(m.name)}</p><p class="text-[13px] font-bold text-ink-900">${fmt(m.base)} &rarr; ${fmt(m.scen)}</p><p class="text-[10px]" style="color:${col}">${ar} ${fmt(Math.abs(dd))} vs baseline</p></div>`; }).join("");
+  $("caReason").innerHTML = `<ul style="list-style:disc" class="pl-4 space-y-0.5">${d.why.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`;
+  const plain = d.movements.filter(m => m.kind === "kpi").map(m => `${label(m.name)} ${fmt(m.base)} → ${fmt(m.scen)}`).join("; ").replace(/&[a-z]+;/g, "") + ` under ${sc.label}. ${d.why[0] || ""}`;
+  askNarration("caWhat", "what changed and why", {situation: sc.label, movements: d.movements, causes: d.why.slice(0, 5)}, plain, {heading: "What changed &amp; why", footnote: "Grounded in the simulator's figures and the use case's knowledge graph; the paragraph does not recalculate anything."});
+  const KST = {driver: {bg: "#eff6ff", bd: "#2563eb", tx: "#1836e1"}, mech: {bg: "#fffbeb", bd: "#d97706", tx: "#b45309"}, kpi: {bg: "#f8fafc", bd: "#94a3b8", tx: "#20365f"}};
+  $("caGraph").innerHTML = !d.paths.length ? '<p class="text-[11px] text-ink-400 py-4 text-center">Baseline &mdash; no drivers active. Pick a scenario to see the causal path.</p>'
+    : d.paths.map(p => `<div class="flex items-start gap-0.5 flex-wrap mb-2">` + p.map((nd, i) => { let {bd, bg, tx} = KST[nd.k];
+        const km = d.kpis.find(x => x.name === nd.id), bad = nd.k === "kpi" && km && ((km.better === "lower" && nd.a === "u") || (km.better !== "lower" && nd.a === "d"));
+        if (bad) { bd = "#dc2626"; bg = "#fef2f2"; tx = "#b91c1c"; }
+        return `<div class="flex flex-col items-center" style="width:80px"><div class="rounded-full flex items-center justify-center" style="width:46px;height:46px;background:${bg};border:2px solid ${bd}"><span style="font-size:15px;color:${bd}">${nd.a === "u" ? "▲" : nd.a === "d" ? "▼" : "•"}</span></div><div class="text-[8.5px] text-center leading-tight mt-0.5" style="color:${tx}">${esc(nd.l)}</div></div>`
+          + (i < p.length - 1 ? '<div class="text-ink-300" style="font-size:18px;margin-top:11px">&rarr;</div>' : ""); }).join("") + `</div>`).join("");
+}
+function askAdvisor(q) { $("adQ").value = q; runAdvisor(); }
+async function runAdvisor() {
+  const sc = SC[+$("adScen").value], q = $("adQ").value;
+  $("adNarr").innerHTML = '<span class="text-ink-400">Reading the scenario, running the optimizer and the knowledge graph&hellip;</span>';
+  try {
+    const d = await post(`/api/apps/${SLUG}/advisor`, {scenario: sc, question: q});
+    $("adSubj").textContent = `${sc.label} · ${d.source === "model" ? "interpreted" : "standard reading"}`;
+    $("adNarr").textContent = d.text;
+    const AD_SRC = {optimizer: "bg-brand-50 text-brand-700 border-brand-200", workbook: "bg-amber-50 text-amber-700 border-amber-200", KG: "bg-emerald-50 text-emerald-700 border-emerald-200"};
+    $("adActions").innerHTML = d.actions.map(a => `<div class="rounded-lg border border-brand-100 bg-brand-50/30 p-2.5"><div class="flex items-start justify-between gap-2"><p class="text-[12px] font-semibold text-ink-800">${esc(a.title.replace(/_/g, " "))}</p><span class="text-[8px] px-1.5 py-0.5 rounded-full border shrink-0 ${AD_SRC[a.src] || "bg-ink-50 text-ink-600 border-ink-200"}">${a.src}</span></div><p class="text-[10.5px] text-ink-600 leading-snug mt-0.5">${esc(a.detail)}</p><p class="text-[10px] text-brand-700 mt-1">${esc(a.why)}</p></div>`).join("");
+    $("adSys").textContent = d.sees.system; $("adUser").textContent = d.sees.user; $("adPayload").textContent = d.sees.payload;
+  } catch (e) { $("adNarr").innerHTML = `<span class="text-status-danger">${esc(e.message)}</span>`; }
+}
+async function drawWatch() {
+  let st, bl;
+  [SC, st, bl] = await Promise.all([api(`/api/apps/${SLUG}/scenarios`), api(`/api/apps/${SLUG}/studio`), api(`/api/apps/${SLUG}/baseline`)]);
+  WT = st; ST = st; BL0 = Object.fromEntries(bl.kpis.map(k => [k.name, bl.forecast.kpis[k.name].p50.reduce((a, b) => a + b, 0) / bl.forecast.kpis[k.name].p50.length]));
+  $("content").innerHTML = watchView(); runAlerts();
+  ON_OPEN.wtca = runCausal; ON_OPEN.wtad = () => {};
+}
+
+// ---------- Ask Simulation.AI (CT's chat: sessions, persona, new chat, answers with Figures / Inspect, review log) ----------
+const NA = "Not available for this answer.";
+let CID = null, _answers = [], ME = null;
+const safeHtml = x => esc(x).replace(/\n/g, "<br>");
+const paraHtml = x => String(x ?? "").split(/\n\s*\n/).map(p => `<p class="mb-2 last:mb-0">${safeHtml(p)}</p>`).join("");
+const isNA = v => v == null || v === "" || (Array.isArray(v) && !v.length);
+const naLine = () => `<p class="text-[12px] text-ink-400 italic">${NA}</p>`;
+const secBox = (icon, title, tone, body) => `<div class="mt-3 rounded-lg border-l-4 border-l-${tone}-400 bg-${tone}-50/50 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-${tone}-700 mb-1">${icon} ${title}</p>${body}</div>`;
+const WAIT_WORDS = ["Thinking", "Working", "Deliberating", "Reasoning", "Crunching the numbers"];
+function startWaiting(el, caption) {
+  el.innerHTML = `<div class="flex items-center gap-2 px-1 py-1.5 text-[13px] text-ink-500"><span class="inline-block w-2 h-2 rounded-full bg-brand-500 animate-pulse"></span><span id="waitWord">${WAIT_WORDS[0]}&hellip;</span>${caption ? `<span class="text-ink-400 text-[11px] ml-1">${caption}</span>` : ""}</div>`;
+  let i = 0; const t = setInterval(() => { i = (i + 1) % WAIT_WORDS.length; const w = $("waitWord"); if (w) w.textContent = WAIT_WORDS[i] + "…"; }, 900);
+  return () => clearInterval(t);
+}
+function revealChildren(el) { Array.from(el.children).forEach((k, i) => { k.style.opacity = "0"; k.style.transform = "translateY(4px)"; k.style.transition = "opacity .25s ease, transform .25s ease"; setTimeout(() => { k.style.opacity = "1"; k.style.transform = "translateY(0)"; }, i * 90); }); }
+function toCT(a, q, ms) {           // SFM's answer sections -> the fields CT's renderer reads
+  const tools = (a.tools || []).map(t => t.tool), tabs = {studio: "Scenario Studio", optimize: "Optimize & ROI", drivers: "Drivers & Forecast", alerts: "Watchtower", baseline: "Baseline"};
+  const ns = a.next_step && typeof a.next_step === "object" ? a.next_step : null, f = a.figure;
+  return {q, ms, route: tools.includes("smallest_change") || tools.includes("optimize") ? "OPTIMIZE" : tools.includes("what_if") ? "WHATIF" : tools.includes("data_query") ? "LOOKUP" : "",
+    grounded: !(a.grounding && a.grounding.verified === false), context: a.question_restated, answer: a.answer,
+    table: a.table && a.table.rows ? {cols: a.table.columns || [], rows: a.table.rows} : null,
+    chart: f && f.series ? {title: f.title, type: f.type || "line", labels: f.x || [], series: f.series} : null,
+    conclusion: a.conclusion, recommended_actions: a.do_this || [], not_worth_doing: a.not_worth_doing || [],
+    explanation: Array.isArray(a.why) ? a.why.join(" ") : a.why, tabUrl: ns && ns.tab ? `/apps/${SLUG}?tab=${ns.tab === "watch" ? "alerts" : ns.tab}` : null,
+    tabName: ns ? tabs[ns.tab] || ns.tab : null, tune: ns ? ns.text : null,
+    followups: (a.try_next || []).map(x => ({label: x, q: x})), assumptions: a.assumptions || [],
+    provenance: {engine: "SFM simulator (this model)", data_snapshot: APP.title + " · version " + APP.live, computed_at: new Date().toLocaleString(), model: "the deployment's language model", source: (a.details || []).join(" · ")},
+    evidence: Array.isArray(a.why) ? a.why : [], trail: a.tools || [], confidence: a.confidence};
+}
+const ASK_PATH = {WHATIF: "Ran the simulator on your scenario", OPTIMIZE: "Searched the levers on the simulator", LOOKUP: "Queried the data"};
+function renderFollowups(list) { return `<div class="followupBlock mt-2 pt-2 border-t border-ink-100"><span class="text-[9px] uppercase tracking-wide text-ink-400 font-semibold">Try next</span><div class="flex flex-wrap gap-1.5 mt-1">${list.map(x => `<button onclick="askPreset(this.dataset.q)" data-q="${esc(x.q)}" class="text-left rounded-full border border-ink-200 bg-white px-2.5 py-1 text-[11px] text-ink-700 hover:bg-brand-50/40">${esc(x.label)}</button>`).join("")}</div></div>`; }
+function renderQuickAnswer(d, cid, idx) {         // CT's answer card, section by section
+  let h = "";
+  const chip = (t, good) => `<span class="text-[10px] font-medium px-2 py-0.5 rounded-full border ${good ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-800 border-amber-300"}">${good ? "&#10003; " : "&#9888; "}${t}</span>`;
+  h += `<div class="flex flex-wrap gap-1.5 mb-2">` + chip("Understood request", true) + chip(esc(ASK_PATH[d.route] || "Answered from this model"), true) + chip(d.grounded ? "every figure traced to a tool" : "some figures could not be verified", d.grounded) + `</div>`;
+  h += `<div class="rounded-lg border-l-4 border-l-ink-300 bg-ink-50/60 p-3 mb-2"><p class="text-[10px] font-bold uppercase tracking-wide text-ink-500 mb-1">&#129504; Understanding the question</p><p class="text-[12.5px] text-ink-600 leading-relaxed">${d.context ? safeHtml(d.context) : NA}</p></div>`;
+  h += `<div class="rounded-lg border-l-4 border-l-sky-400 bg-sky-50/50 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-sky-700 mb-1">&#128202; What happens</p><div class="text-[13px] text-ink-900 leading-relaxed">${paraHtml(d.answer)}</div></div>`;
+  const hasT = d.table && d.table.rows && d.table.rows.length;
+  h += `<div class="mt-3"><p class="text-[10px] font-bold uppercase tracking-wide text-ink-500 mb-1">&#128203; Table</p>` + (hasT ? `<div class="mx-auto" style="max-width:78%"><div class="overflow-hidden rounded-lg border-2 border-ink-200"><table class="w-full text-[12px]"><thead><tr class="bg-ink-50 text-ink-500">`
+    + d.table.cols.map(c => `<th class="text-left font-medium px-3 py-1.5">${safeHtml(c)}</th>`).join("") + `</tr></thead><tbody>` + d.table.rows.map(r => `<tr class="border-t border-ink-100">` + r.map((c, i) => `<td class="px-3 py-1.5 ${i === 0 ? "text-ink-700" : "text-ink-900 font-medium"}">${safeHtml(typeof c === "number" ? fmt(c) : c)}</td>`).join("") + `</tr>`).join("") + `</tbody></table></div></div>` : naLine()) + `</div>`;
+  const hasC = cid && d.chart;
+  h += `<div class="mt-3"><p class="text-[10px] font-bold uppercase tracking-wide text-ink-500 mb-1">&#128200; Figure</p>` + (hasC ? `<div class="mx-auto" style="max-width:78%"><div class="rounded-lg border-2 border-ink-200 p-2"><p class="text-[10px] text-ink-400 mb-1">${esc(d.chart.title || "")}</p><div style="height:160px"><canvas id="${cid}"></canvas></div></div></div>` : naLine()) + `</div>`;
+  const acts = d.recommended_actions.length ? `<p class="text-[9.5px] uppercase tracking-wide text-ink-400 font-semibold mt-2">Do this</p><ul class="mt-0.5 space-y-0.5">` + d.recommended_actions.map(x => `<li class="text-[12.5px] text-ink-700">&#10003; ${safeHtml(x)}</li>`).join("") + `</ul>` : "";
+  const nots = d.not_worth_doing.length ? `<p class="text-[9.5px] uppercase tracking-wide text-ink-400 font-semibold mt-2">Not worth doing</p><ul class="mt-0.5 space-y-0.5">` + d.not_worth_doing.map(x => `<li class="text-[12.5px] text-ink-700">&times; ${safeHtml(x)}</li>`).join("") + `</ul>` : "";
+  h += secBox("&#128161;", "What it means", "emerald", (isNA(d.conclusion) ? naLine() : `<p class="text-[13px] text-ink-700 leading-relaxed">${safeHtml(d.conclusion)}</p>`) + acts + nots);
+  h += secBox("&#128269;", "Why this happens", "amber", isNA(d.explanation) ? naLine() : `<p class="text-[12.5px] text-ink-600 leading-relaxed">${safeHtml(d.explanation)}</p>`);
+  h += secBox("&#128736;", "Recommended next step", "violet", isNA(d.tabUrl) ? naLine() : `<div class="flex flex-wrap items-center gap-2"><a href="${esc(d.tabUrl)}" class="inline-flex items-center gap-1.5 bg-brand-600 text-white text-[12px] font-medium px-3 py-1.5 rounded-md hover:bg-brand-700">Open ${safeHtml(d.tabName || "tab")} &rarr;</a>${d.tune ? `<span class="text-[11px] text-ink-500">then ${safeHtml(d.tune)}</span>` : ""}</div>`);
+  h += d.followups.length ? renderFollowups(d.followups) : `<div class="followupBlock mt-2 pt-2 border-t border-ink-100"><span class="text-[9px] uppercase tracking-wide text-ink-400 font-semibold">Try next</span>${naLine()}</div>`;
+  h += `<details class="mt-2 text-[11px]"><summary class="cursor-pointer text-ink-400 select-none">&#9881;&#65039; Assumptions &amp; inputs</summary>${d.assumptions.length ? `<ul style="list-style:disc" class="pl-5 mt-1 text-ink-500 space-y-0.5">` + d.assumptions.map(a => `<li>${safeHtml(a)}</li>`).join("") + `</ul>` : naLine()}</details>`;
+  const pv = d.provenance;
+  h += `<details class="mt-1 text-[11px]"><summary class="cursor-pointer text-ink-400 select-none">&#128203; Model &amp; data details</summary><div class="mt-1 text-ink-500 space-y-0.5"><div>Data snapshot: <b>${esc(pv.data_snapshot)}</b></div><div>Engine: <b>${esc(pv.engine)}</b></div><div>Computed: <b>${esc(pv.computed_at)}</b></div>${pv.source ? `<div>Source: <b>${esc(pv.source)}</b></div>` : ""}${d.confidence ? `<div>Confidence: <b>${esc(typeof d.confidence === "string" ? d.confidence : d.confidence.level || "")}</b></div>` : ""}</div></details>`;
+  if (idx != null) { const btn = "text-[11px] font-medium text-brand-700 bg-brand-50 border border-brand-200 rounded-full px-2.5 py-1 hover:bg-brand-100";
+    h += `<div class="mt-2 pt-2 border-t border-ink-100 flex items-center justify-between flex-wrap gap-1.5"><span class="text-[10px] text-ink-400">&#9889; ${(_answers[idx] || {}).ms || 0}ms</span><div class="flex gap-1.5">`
+      + `<button onclick="openFigures(${idx})" class="${btn}${d.evidence.length ? "" : " opacity-50"}">&#128203; Figures</button><button onclick="analyseInDepth(${idx},this)" class="${btn}">&#128300; Analyse in depth</button>`
+      + `<button onclick="openInspect(${idx})" class="${btn}">&#128269; Inspect</button><button onclick="rate(${idx},'up',this)" class="${btn}" title="Good answer">&#128077;</button><button onclick="rate(${idx},'down',this)" class="${btn}" title="Something was wrong">&#128078;</button></div></div>`; }
+  return h;
+}
+function renderAskChart(cid, c) { if (!c) return; chart(cid, {type: c.type === "bar" ? "bar" : "line", data: {labels: c.labels, datasets: (c.series || []).map((x, i) => ({label: x.name, data: x.values, borderColor: i === 0 ? "#3366ff" : "#dc2626", backgroundColor: i === 0 ? "rgba(51,102,255,.5)" : "rgba(220,38,38,.5)", borderDash: i === 0 ? [] : [5, 3], borderWidth: 2, pointRadius: 0, tension: .3}))}}); }
+function openInspect(idx) {
+  const a = _answers[idx]; if (!a) return;
+  const steps = ["Understand the question", ...a.trail.map(t => t.tool.replace(/_/g, " ")), "Write the answer"];
+  $("inspectTitle").textContent = "How I got this answer";
+  $("inspectBody").innerHTML = `<p class="text-[9.5px] uppercase tracking-wide text-ink-400 font-semibold mb-1">What you asked</p><div class="border-l-4 border-l-brand-400 bg-ink-50 rounded px-3 py-2 text-[13px] text-ink-800 mb-3">${esc(a.q)}</div>`
+    + `<p class="text-[9.5px] uppercase tracking-wide text-ink-400 font-semibold mb-1">How I answered it</p><span class="inline-block text-[12px] bg-ink-50 border border-ink-200 rounded-full px-3 py-1 mb-3">${a.trail.length ? "Called " + a.trail.length + " tool(s)" : "Answered from this model"}</span>`
+    + `<p class="text-[9.5px] uppercase tracking-wide text-ink-400 font-semibold mb-1">The path I took</p><div class="flex flex-wrap items-center gap-1 mb-3">${steps.map(x => `<span class="text-[11px] bg-ink-50 border border-ink-200 rounded-full px-2.5 py-1 whitespace-nowrap">${esc(x)}</span>`).join('<span class="text-ink-300">&rarr;</span>')}</div>`
+    + (a.evidence.length ? `<p class="text-[9.5px] uppercase tracking-wide text-ink-400 font-semibold mb-1">Evidence</p><ul style="list-style:disc" class="pl-5 text-[12px] text-ink-600 mb-3 space-y-0.5">${a.evidence.map(e => `<li>${safeHtml(e)}</li>`).join("")}</ul>` : "")
+    + `<div class="rounded-lg px-3 py-2 text-[12px] ${a.grounded ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-amber-50 text-amber-800 border border-amber-300"}">${a.grounded ? "&#10003; Grounded in this model's data. Every figure above came from the simulator, the data or the documents — none were estimated." : "&#9888; Some figures here could not be fully verified against a tool."}</div>`;
+  $("inspectModal").style.display = "flex";
+}
+function openFigures(idx) {
+  const a = _answers[idx]; if (!a) return; $("inspectTitle").textContent = "Figures behind this answer";
+  $("inspectBody").innerHTML = !a.evidence.length ? naLine() : `<p class="text-[9.5px] uppercase tracking-wide text-ink-400 font-semibold mb-1">What you asked</p><div class="border-l-4 border-l-brand-400 bg-ink-50 rounded px-3 py-2 text-[13px] text-ink-800 mb-3">${esc(a.q)}</div><p class="text-[9.5px] uppercase tracking-wide text-ink-400 font-semibold mb-1">Figures used in this answer</p><ul style="list-style:disc" class="pl-5 text-[13px] text-ink-700 space-y-1">${a.evidence.map(e => `<li>${safeHtml(e)}</li>`).join("")}</ul>`;
+  $("inspectModal").style.display = "flex";
+}
+function closeInspect() { $("inspectModal").style.display = "none"; }
+const getPersona = () => { try { return localStorage.getItem("ctPersona") || "business"; } catch (e) { return "business"; } };
+function setPersona(p) { try { localStorage.setItem("ctPersona", p); } catch (e) {} paintPersona(); }
+function paintPersona() { const p = getPersona(); [["pBusiness", "business"], ["pAnalyst", "analyst"]].forEach(([id, v]) => { const b = $(id); if (b) b.className = "px-2.5 py-1" + (id === "pAnalyst" ? " border-l border-ink-200" : "") + (p === v ? " bg-brand-600 text-white" : " text-ink-600 hover:bg-ink-50"); }); }
+const UCID = () => UC.id;
+async function loadSessions() {
+  const cs = await api(`/api/session/${UCID()}/conversations`) || [];
+  $("sessList").innerHTML = cs.length ? cs.slice().reverse().map(c => `<button onclick="openChat('${c.id}')" class="w-full text-left rounded px-2 py-1.5 truncate ${c.id === CID ? "bg-brand-50 text-brand-700 font-medium" : "text-ink-600 hover:bg-ink-50"}">${esc(c.title || "New chat")}</button>`).join("")
+    : '<p class="text-ink-400 text-[11px] px-2 py-3 text-center">No sessions yet.</p>';
+}
+function askBubble(who) {           // CT's chat bubbles (the user's question can be edited and asked again)
+  const c = $("chat"), e = $("askEmpty"); if (e) e.remove();
+  const row = document.createElement("div"); row.className = who === "user" ? "flex justify-end items-start gap-1.5" : "flex justify-start";
+  const b = document.createElement("div"); b.className = who === "user" ? "bg-brand-600 text-white rounded-2xl px-4 py-2.5 max-w-[80%] text-[13px] whitespace-pre-wrap" : "max-w-[92%] w-full";
+  if (who === "user") { const eb = document.createElement("button"); eb.title = "Edit & rerun this question"; eb.className = "text-ink-300 hover:text-brand-600 text-[13px] mt-2"; eb.innerHTML = "&#9998;";
+    eb.onclick = () => { $("q").value = b.textContent; $("q").focus(); }; row.appendChild(eb); }
+  row.appendChild(b); c.appendChild(row); c.scrollTop = c.scrollHeight; return b;
+}
+function showAnswer(a, q, ms, idx0) {
+  const idx = idx0 ?? _answers.length, d = toCT(a, q, ms); _answers[idx] = d;
+  const el = askBubble("sfm"), cid = "askC" + idx;
+  el.innerHTML = renderQuickAnswer(d, cid, idx); renderAskChart(cid, d.chart); revealChildren(el); $("chat").scrollTop = $("chat").scrollHeight;
+}
+async function openChat(cid) {
+  CID = cid; const v = await api(`/api/session/${UCID()}/conversation/${cid}`);
+  $("sessTitle").textContent = (v.conversation || {}).title || "Chat";
+  $("chat").innerHTML = ""; _answers = []; let q = "";
+  (v.chat || []).forEach(m => { if (m.who === "user") { q = m.text; askBubble("user").textContent = m.text; } else if (m.answer && m.answer.agent) { showAnswer(m.answer.agent, q, 0); _answers[_answers.length - 1].chatIndex = (v.chat || []).indexOf(m); } });
+  if (!(v.chat || []).length) emptyChat();
+  loadSessions();
+}
+function emptyChat() {
+  const k = (ST && ST.kpis || [])[0], lv = (ST && ST.levers || [])[0];
+  const presets = [lv ? `What if ${label(lv.label).toLowerCase()} rises by ${fmt(lv.hi / 2)} ${lv.unit}?` : "What if?", k ? `Why does ${label(k.name).toLowerCase()} move?` : "Why?",
+                   k ? `What's the smallest change that improves ${label(k.name).toLowerCase()} by 2 points?` : "What's the best plan?", k ? `Predict ${label(k.name).toLowerCase()} over the next quarter.` : "Predict"];
+  $("chat").innerHTML = `<div id="askEmpty" class="h-full flex flex-col items-center justify-center text-center gap-3 px-6" style="min-height:50vh"><div class="w-11 h-11 rounded-full bg-brand-600 text-white flex items-center justify-center text-[19px]">&#9670;</div>`
+    + `<div><div class="font-semibold text-[17px] text-ink-900">Ask Simulation.AI</div><p class="text-ink-400 text-[12px] mt-0.5">Scenario Intelligence</p></div><div class="grid grid-cols-2 gap-2 mt-2 w-full max-w-md">`
+    + presets.map(q => `<button onclick="askPreset(this.dataset.q)" data-q="${esc(q)}" class="text-left rounded-lg border border-ink-200 bg-white hover:border-brand-300 hover:bg-brand-50/40 px-3 py-2.5 text-[12px] text-ink-700 transition-colors">${esc(q)}</button>`).join("") + `</div></div>`;
+}
+async function newChat() { const d = await post(`/api/session/${UCID()}/conversations`, {}); CID = d.conversation.id; $("sessTitle").textContent = "New session"; emptyChat(); loadSessions(); }
+function askPreset(q) { $("q").value = q; ask(); }
+async function ask(styleOverride) {
+  const q = $("q").value.trim(); if (!q) return; $("q").value = "";
+  if (!CID) { const d = await post(`/api/session/${UCID()}/conversations`, {}); CID = d.conversation.id; }
+  askBubble("user").textContent = q;
+  const el = askBubble("sfm"), stop = startWaiting(el, "running the model on your question"), t0 = Date.now();
+  try {
+    await post(`/api/session/${UCID()}/conversation/${CID}/message`, {text: q, style: styleOverride || getPersona()});
+    let v; for (let i = 0; i < 600; i++) { await new Promise(r => setTimeout(r, 1500)); v = await api(`/api/session/${UCID()}/conversation/${CID}`); if (!v.busy) break; }
+    stop(); el.parentElement.remove();   // the waiting row
+    const m = (v.chat || []).slice().reverse().find(x => x.who === "sfm");
+    if (m && m.answer && m.answer.agent) { showAnswer(m.answer.agent, q, Date.now() - t0); _answers[_answers.length - 1].chatIndex = v.chat.lastIndexOf(m); }
+    else { const b = askBubble("sfm"); b.innerHTML = `<p class="text-[13px] text-ink-700">${safeHtml((m && m.text) || "No answer.")}</p>`; }
+    loadSessions();
+  } catch (e) { stop(); el.innerHTML = `<p class="text-[12px] text-status-danger">${esc(e.message)}</p>`; }
+}
+function analyseInDepth(idx) { const a = _answers[idx]; if (!a) return; $("q").value = a.q; ask("analyst"); }
+async function rate(idx, r, btn) {
+  const a = _answers[idx]; if (!a || a.chatIndex == null) return;
+  const note = r === "down" ? (prompt("What was wrong? (it goes to the review log and the reviewers' change queue)") || "") : "";
+  await post(`/api/session/${UCID()}/conversation/${CID}/feedback`, {index: a.chatIndex, rating: r, note});
+  btn.textContent = r === "up" ? "✓ thanks" : "✓ noted";
+}
+function askView() {
+  const user = ME && ME.user ? `<span id="sessUser" class="truncate">${esc(ME.user)}</span>` : `<span id="sessUser" class="truncate">${ME && ME.auth ? "&mdash;" : "local (sign-in off)"}</span>`;
+  const sidebar = `<aside id="sessSidebar" class="w-56 shrink-0 bg-white rounded-lg border border-ink-200 flex flex-col"><div id="sessList" class="flex-1 overflow-y-auto px-1.5 py-1.5 space-y-0.5 text-[12px]"><p class="text-ink-400 text-[11px] px-2 py-3 text-center">Loading sessions&hellip;</p></div>`
+    + `<div class="px-2.5 py-2 border-t border-ink-100 flex items-center justify-between gap-2"><span class="text-[11px] text-ink-600 truncate flex items-center gap-1"><span class="w-4 h-4 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-[9px]">&#128100;</span>${user}</span></div></aside>`;
+  const card = `<div class="bg-white rounded-lg border border-ink-200 flex-1 flex flex-col min-w-0"><div class="flex items-center justify-between px-3 py-1.5 border-b border-ink-100"><span id="sessTitle" class="text-[12px] font-medium text-ink-600 truncate">New session</span><div class="flex items-center gap-2">`
+    + `<div class="flex rounded-md border border-ink-200 overflow-hidden text-[11px]" role="group" aria-label="Answer style"><button id="pBusiness" onclick="setPersona('business')" class="px-2.5 py-1" title="Plain-language answers built from how the business works">Business</button><button id="pAnalyst" onclick="setPersona('analyst')" class="px-2.5 py-1 border-l border-ink-200" title="Exact figures, deltas, inputs and method">Analyst</button></div>`
+    + `<button onclick="newChat()" class="text-[11px] font-medium text-ink-500 hover:text-brand-700 flex items-center gap-1 px-2 py-1 rounded-md hover:bg-ink-50">&#10133; New chat</button></div></div>`
+    + `<div id="chat" class="flex-1 overflow-y-auto px-5 py-4 space-y-3"></div><div class="px-5 pt-2 border-t border-ink-100"><div class="flex gap-2 pb-4"><input id="q" class="flex-1 border border-ink-300 rounded-md px-3 py-2 text-[13px]" placeholder="Ask a question about your simulation&hellip;" onkeydown="if(event.key==='Enter')ask()"><button onclick="ask()" class="bg-brand-600 text-white px-4 py-2 rounded-md text-[13px]">Ask</button></div></div></div>`;
+  const modal = `<div id="inspectModal" class="fixed inset-0 bg-black/40 z-50" style="display:none;align-items:center;justify-content:center"><div class="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto"><div class="bg-brand-700 text-white px-5 py-3 rounded-t-xl flex items-center justify-between"><span id="inspectTitle" class="font-semibold text-[14px]">How I got this answer</span><button onclick="closeInspect()" class="text-white/80 hover:text-white text-[18px] leading-none">&times;</button></div><div id="inspectBody" class="p-5"></div></div></div>`;
+  return `<div class="flex gap-3" style="height:72vh">${sidebar}${card}${modal}</div>`;
+}
+async function drawAsk() {
+  [ME, ST] = await Promise.all([api("/api/me"), api(`/api/apps/${SLUG}/studio`)]);
+  chrome(); $("content").innerHTML = askView(); paintPersona(); emptyChat(); await loadSessions();
+}
+async function drawReview() {
+  const d = await api(`/api/apps/${SLUG}/review`);
+  const rows = d.rows.map(r => `<tr class="border-b border-ink-50"><td class="py-1 text-ink-500 text-[11px]">${esc((r.at || "").slice(0, 16).replace("T", " "))}</td><td class="py-1 text-[11px]">${esc(r.chat)}</td><td class="py-1 text-[12px] text-ink-800">${esc(r.question)}</td><td class="py-1 text-[11px] text-ink-600">${esc(r.answer)}</td>`
+    + `<td class="py-1 text-[12px]">${r.rating === "up" ? "&#128077;" : r.rating === "down" ? "&#128078;" : ""}</td><td class="py-1 text-[11px] text-ink-600">${esc(r.note || "")}</td></tr>`).join("");
+  const cr = d.change_requests.map(c => `<li class="text-[12px] text-ink-700"><b>${esc(c.status)}</b> · ${esc(c.source)} · ${esc(c.text)}</li>`).join("");
+  $("content").innerHTML = section("rv", "Review log &mdash; every question, answer and rating", rows ? `<table class="w-full"><tr>${th("When")}${th("Session")}${th("Question")}${th("Answer")}${th("Rating")}${th("Note")}</tr>${rows}</table>` : `<p class="text-[12px] text-ink-400">No questions yet.</p>`, `${d.rows.length} answers`, true)
+    + section("rvc", "Change requests for the reviewers", cr ? `<ul style="list-style:disc" class="pl-5 space-y-1">${cr}</ul>` : `<p class="text-[12px] text-ink-400">None.</p>`, `${d.change_requests.length}`, true);
+}
+function comingNext() {           // the other tabs: built in the next steps, in CT's sections
+  const S = {studio: ["Scenario Impact", "Flow Response", "Where to Intervene — Decision Points & Plans", "Compare Scenarios"],
+             optimize: ["Optimizer — best action for a scenario", "ROI Analysis — value of a mitigation vs its cost"],
+             drivers: ["Drivers", "Forecast — forward outlook", "Uncertainty — volatility & risk bands"],
+             alerts: ["Proactive Alerts — early warnings on the horizon", "Causal Explanation — what changed, why & the causal network", "Advisor — recommended actions"],
+             ask: ["Ask Simulation.AI"]}[TAB] || [];  // studio is built
+  $("content").innerHTML = S.map((t, i) => section("n" + i, t, `<p class="text-[12px] text-ink-500">Being built in the next step.</p>`)).join("");
+}
+// ---------- Building Model: Level 1 the builder page read-only; Level 2 the project's step records ----------
+async function drawBuilding() {
+  if (!(APP && APP.building === "records")) {
+    $("content").innerHTML = `<iframe id="bframe" src="/?embed=1#${esc(UC.id)}" title="Building the model"
+      class="w-full bg-white rounded-xl border border-ink-200" style="height:calc(100vh - 140px)"></iframe>`;
+    return;
+  }
+  const b = await api(`/api/apps/${SLUG}/building`), st = b.journey.status, names = Object.keys(st);
+  const chip = s => `<span class="text-[10px] px-2 py-0.5 rounded-full ${s === "approved" ? "bg-emerald-50 text-emerald-700"
+    : s === "waiting" ? "bg-amber-50 text-amber-700" : s === "redo" ? "bg-red-50 text-red-600" : "bg-ink-100 text-ink-500"}">${esc(s)}</span>`;
+  $("content").innerHTML = `<div class="bg-white rounded-xl border border-ink-200 p-4 mb-3"><p class="text-[13px] font-semibold">Step ${b.journey.current} of ${names.length}</p>
+    <div class="flex flex-wrap gap-1.5 mt-2">${names.map((n, i) => `<span class="text-[11px] text-ink-600">${i + 1} ${label(n)}</span>${chip(st[n])}`).join("")}</div></div>`
+    + (b.steps.length ? "" : `<div class="bg-white rounded-xl border border-ink-200 p-4 text-ink-500">No step yet: start the journey in your assistant.</div>`)
+    + b.steps.map(s => stepCard(s, st[s.name], b.decisions.filter(d => d.step === s.step), chip)).join("");
+  if (window.mermaid) { try { mermaid.initialize({startOnLoad: false}); await mermaid.run({querySelector: ".mermaid"}); } catch (e) {} }
+}
+function stepCard(s, status, ds, chip) {
+  const tables = (s.tables || []).map(t => `<p class="text-[12px] font-semibold mt-2">${esc(t.title)}</p><table class="text-[12px] mt-1 border-collapse">
+    <tr>${t.columns.map(c => `<th class="border border-ink-200 px-2 py-1 text-left">${esc(c)}</th>`).join("")}</tr>
+    ${t.rows.map(r => `<tr>${r.map(v => `<td class="border border-ink-200 px-2 py-1">${esc(v)}</td>`).join("")}</tr>`).join("")}</table>`).join("");
+  const msgs = (s.messages || []).map(m => `<p class="text-[12px] mt-1 ${m.who === "user" ? "text-brand-700" : "text-ink-600"}"><b>${m.who === "user" ? "You" : "Assistant"}:</b> ${esc(m.text)}</p>`).join("");
+  const buttons = status === "waiting" ? `<div class="flex gap-2 mt-3"><button onclick="decideStep(${s.step},'approve')" class="bg-brand-600 text-white rounded-lg px-3 py-1.5 text-[12px]">Approve</button>
+    <button onclick="decideStep(${s.step},'feedback')" class="border border-ink-200 rounded-lg px-3 py-1.5 text-[12px]">Give feedback</button>
+    <button onclick="decideStep(${s.step},'back')" class="border border-ink-200 rounded-lg px-3 py-1.5 text-[12px]">Go back to here</button></div>` : "";
+  return `<div class="bg-white rounded-xl border border-ink-200 p-4 mb-3"><div class="flex items-center gap-2"><span class="text-[11px] text-ink-400">Step ${s.step}</span>
+    <span class="text-[13px] font-semibold">${esc(s.title)}</span>${chip(status)}</div><p class="text-[13px] mt-1">${esc(s.summary)}</p>
+    ${(s.findings || []).length ? `<ul class="list-disc ml-5 mt-1 text-[12.5px]">${s.findings.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}
+    ${tables}${(s.diagrams || []).map(g => `<pre class="mermaid">${esc(g)}</pre>`).join("")}${msgs}
+    ${ds.map(d => `<p class="text-[11px] text-ink-500 mt-1">${esc(d.decision)} by ${esc(d.who || "you")} (${esc(d.source)})${d.text ? ": " + esc(d.text) : ""}</p>`).join("")}${buttons}</div>`;
+}
+async function decideStep(step, decision) {
+  const text = decision === "approve" ? "" : (prompt(decision === "feedback" ? "Your feedback for this step:" : "Why go back to this step?") || "");
+  try { await post(`/api/apps/${SLUG}/building`, {step, decision, text, who: ""}); } catch (e) { alert(e.message); }
+  drawBuilding();
+}
+async function main() {
+  try {
+    const d = await api(`/api/apps/${SLUG}`); if (!d) return;
+    APP = d.app; UC = d.use_case;
+    if (Array.isArray(APP.tabs)) TABS = TABS_ALL.filter(t => APP.tabs.includes(t[0]));
+    try { ME = await api("/api/me"); } catch (e) { ME = null; }
+    if (TAB === "baseline") { BL = await api(`/api/apps/${SLUG}/baseline`); chrome(); drawBaseline(); }
+    else if (TAB === "building") { chrome(); await drawBuilding(); }
+    else if (TAB === "studio") { chrome(); await drawStudio(); }
+    else if (TAB === "optimize") { chrome(); await drawOptimize(); }
+    else if (TAB === "drivers") { chrome(); await drawDrivers(); }
+    else if (TAB === "alerts") { chrome(); await drawWatch(); }
+    else if (TAB === "ask") { await drawAsk(); }
+    else if (TAB === "review") { chrome(); await drawReview(); }
+    else { chrome(); comingNext(); }
+  } catch (e) {
+    chrome(); $("content").innerHTML = `<div class="bg-white rounded-xl border border-ink-200 p-6 text-[13px] text-ink-600">This model page is not available: ${esc(e.message)}</div>`;
+  }
+}
+main();
+</script>
+</body></html>
